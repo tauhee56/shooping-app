@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "k-al Shopping",
+    "slug": "kalshopping",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "kalshopping",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kalshopping.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FF6B9D",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "package": "com.kalshopping.app",
+      "permissions": []
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "updates": {
+      "enabled": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    }
+  }
+}
