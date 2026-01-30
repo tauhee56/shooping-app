@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "42207932954",
+    "project_id": "shoppingapp-e6ac2",
+    "storage_bucket": "shoppingapp-e6ac2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:42207932954:android:8cbf45ea180e17beb6d7a3",
+        "android_client_info": {
+          "package_name": "com.kalshopping.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "42207932954-0tm83odngdjff4jr38um8a7m3n7ji4q8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kalshopping.app",
+            "certificate_hash": "2bd1e7c6e06638a93f02eb7c92b9c37c67d1c872"
+          }
+        },
+        {
+          "client_id": "42207932954-qd2ba79dmbcvlv26qit2rnf5k021rcom.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kalshopping.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "42207932954-r4q8p5cdg2cmimlqsmo1bj2a685sg919.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIKGqVEiL2K7k2lZFawASOuJgBGSd6BEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "42207932954-r4q8p5cdg2cmimlqsmo1bj2a685sg919.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

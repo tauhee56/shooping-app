@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { storeAPI } from '../utils/api';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 45) / 2;
@@ -20,20 +21,25 @@ const MyStoreScreen = ({ navigation, route }) => {
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStore();
-  }, [storeId]);
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
 
-  const fetchStore = async () => {
+  const fetchStore = useCallback(async () => {
     try {
-      const response = await storeAPI.getMyStore();
+      const sid = typeof storeId === 'string' ? storeId : '';
+      const response = sid ? await storeAPI.getStoreById(sid) : await storeAPI.getMyStore();
       setStore(response.data);
       setLoading(false);
     } catch (error) {
       console.log('Error fetching store:', error);
       setLoading(false);
     }
-  };
+  }, [storeId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchStore();
+    }, [fetchStore, storeId])
+  );
 
   const handleEditProduct = (product) => {
     navigation.navigate('EditProduct', { 
@@ -61,10 +67,14 @@ const MyStoreScreen = ({ navigation, route }) => {
       style={styles.productCard}
       onPress={() => navigation.navigate('ProductDetail', { productId: item._id })}
     >
-      <Image
-        source={{ uri: item.images?.[0] || 'https://via.placeholder.com/150' }}
-        style={styles.productImage}
-      />
+      {isValidImageUri(item?.images?.[0]) ? (
+        <Image
+          source={{ uri: item.images[0] }}
+          style={styles.productImage}
+        />
+      ) : (
+        <View style={styles.productImage} />
+      )}
       <View style={styles.productInfo}>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
         <Text style={styles.productPrice}>£{item.price}</Text>
@@ -113,17 +123,25 @@ const MyStoreScreen = ({ navigation, route }) => {
         </View>
 
         {/* Store Banner */}
-        <Image
-          source={{ uri: store.banner || 'https://via.placeholder.com/300' }}
-          style={styles.banner}
-        />
+        {isValidImageUri((store as any)?.banner) ? (
+          <Image
+            source={{ uri: (store as any).banner }}
+            style={styles.banner}
+          />
+        ) : (
+          <View style={styles.banner} />
+        )}
 
         {/* Store Info Card */}
         <View style={styles.storeInfoCard}>
-          <Image
-            source={{ uri: store.logo || 'https://via.placeholder.com/80' }}
-            style={styles.storeIcon}
-          />
+          {isValidImageUri((store as any)?.logo) ? (
+            <Image
+              source={{ uri: (store as any).logo }}
+              style={styles.storeIcon}
+            />
+          ) : (
+            <View style={styles.storeIcon} />
+          )}
           <View style={styles.storeInfo}>
             <Text style={styles.storeName}>{store.name}</Text>
             <Text style={styles.storeLocation}>{store.location}</Text>
@@ -145,12 +163,12 @@ const MyStoreScreen = ({ navigation, route }) => {
         </View>
 
         {/* Description */}
-        {store.description && (
+        {typeof store.description === 'string' && store.description.trim().length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
             <Text style={styles.description}>{store.description}</Text>
           </View>
-        )}
+        ) : null}
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>

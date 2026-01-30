@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { AuthContext } from '../context/AuthContext';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -16,12 +17,10 @@ const SettingsScreen = ({ navigation }) => {
   const [emailNotifications, setEmailNotifications] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  const handleLogout = () => {
-    // Add logout logic here (clear auth tokens, etc.)
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
+  const { logout } = React.useContext(AuthContext);
+
+  const handleLogout = async () => {
+    await logout();
   };
 
   const settingsSections = [
@@ -93,7 +92,9 @@ const SettingsScreen = ({ navigation }) => {
                   />
                 ) : (
                   <View style={styles.settingRight}>
-                    {item.value && <Text style={styles.settingValue}>{item.value}</Text>}
+                    {typeof item.value === 'string' && item.value.trim().length > 0 ? (
+                      <Text style={styles.settingValue}>{item.value}</Text>
+                    ) : null}
                     <MaterialIcons name="chevron-right" size={24} color={COLORS.gray} />
                   </View>
                 )}

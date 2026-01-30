@@ -29,6 +29,14 @@ const AddPaymentMethodScreen = ({ navigation, route }) => {
   const [isDefault, setIsDefault] = useState(false);
 
   const handleSavePayment = () => {
+    Alert.alert('Coming soon', 'Stripe setup pending. Payment methods will be enabled once configured.', [
+      {
+        text: 'OK',
+        onPress: () => navigation.goBack(),
+      },
+    ]);
+    return;
+
     if (!cardholderName.trim()) {
       Alert.alert('Error', 'Please enter cardholder name');
       return;

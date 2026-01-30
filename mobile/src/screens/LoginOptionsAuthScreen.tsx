@@ -30,8 +30,13 @@ const LoginOptionsAuthScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.brandingContainer}>
+          <Text style={styles.brandIcon}>🛍️</Text>
+          <Text style={styles.brandName}>k-al</Text>
+          <Text style={styles.brandTagline}>Handmade with Love</Text>
+        </View>
+
         <View style={styles.titleSection}>
-          <Text style={styles.logo}>Shopping App</Text>
           <Text style={styles.subtitle}>How would you like to login?</Text>
         </View>
 
@@ -57,8 +62,11 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 20, paddingBottom: 40 },
   header: { marginBottom: 20 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.light, alignItems: 'center', justifyContent: 'center' },
+  brandingContainer: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
+  brandIcon: { fontSize: 60, marginBottom: 10 },
+  brandName: { fontSize: 32, fontWeight: 'bold', color: COLORS.primary },
+  brandTagline: { fontSize: 12, color: COLORS.gray, marginTop: 5 },
   titleSection: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
-  logo: { fontSize: 18, fontWeight: '700', color: COLORS.secondary, marginBottom: 8 },
   subtitle: { fontSize: 14, color: COLORS.gray },
   methodContainer: { marginTop: 10, gap: 12 },
   optionButton: { paddingVertical: 14, borderRadius: 10, alignItems: 'center' },

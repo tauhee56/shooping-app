@@ -2,12 +2,13 @@
   "expo": {
     "name": "k-al Shopping",
     "slug": "kalshopping",
+    "owner": "barkat464",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "kalshopping",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kalshopping.app"
@@ -17,14 +18,19 @@
         "backgroundColor": "#FF6B9D",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
+      "googleServicesFile": "./google-services.json",
       "package": "com.kalshopping.app",
-      "permissions": []
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-splash-screen",
         {
@@ -33,14 +39,36 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.kalshopping.app"
+        }
+      ],
+      "@react-native-firebase/app",
+      "@react-native-google-signin/google-signin",
+      "expo-router"
     ],
     "updates": {
       "enabled": false
     },
     "extra": {
+      "google": {
+        "webClientId": "42207932954-r4q8p5cdg2cmimlqsmo1bj2a685sg919.apps.googleusercontent.com",
+        "iosClientId": ""
+      },
+      "firebase": {
+        "apiKey": "AIzaSyDzYCEbo2hIn-aZ7CGKUWUefpQiP62S1EY",
+        "authDomain": "shoppingapp-e6ac2.firebaseapp.com",
+        "projectId": "shoppingapp-e6ac2",
+        "storageBucket": "shoppingapp-e6ac2.firebasestorage.app",
+        "messagingSenderId": "42207932954",
+        "appId": "1:42207932954:web:7ba830f9cfa69890b6d7a3",
+        "measurementId": "G-087J9KT41M"
+      },
       "eas": {
-        "projectId": "your-project-id"
+        "projectId": "20100006-048f-469c-a9a3-02b248b90605"
       }
     }
   }

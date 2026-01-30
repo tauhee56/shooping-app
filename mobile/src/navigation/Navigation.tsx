@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
@@ -36,8 +37,8 @@ import AddPaymentMethodScreen from '../screens/AddPaymentMethodScreen';
 import EditStoreScreen from '../screens/EditStoreScreen';
 import EditProductScreen from '../screens/EditProductScreen';
 
-const Stack = createStackNavigator();
-const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator<any>();
+const Tab = createBottomTabNavigator<any>();
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -63,9 +64,27 @@ const COLORS = {
 //   );
 // };
 
+const AuthStack = () => {
+  return (
+    <Stack.Navigator
+      id="AuthStack"
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: COLORS.white },
+      } as any}
+    >
+      <Stack.Screen name="WelcomeAuth" component={WelcomeAuthScreen} />
+      <Stack.Screen name="LoginOptionsAuth" component={LoginOptionsAuthScreen} />
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+    </Stack.Navigator>
+  );
+};
+
 const HomeStack = () => {
   return (
     <Stack.Navigator
+      id="HomeStack"
       screenOptions={{
         headerShown: false,
       }}
@@ -76,28 +95,28 @@ const HomeStack = () => {
         component={ProductDetailScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="Cart" 
         component={CartScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="StoreDetail" 
         component={StoreDetailScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="StoreProducts" 
         component={StoreProductsScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="FilterModal" 
@@ -105,49 +124,49 @@ const HomeStack = () => {
         options={{
           animationEnabled: true,
           presentation: 'modal',
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="Checkout" 
         component={CheckoutScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="OrderSuccess" 
         component={OrderSuccessScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="Addresses" 
         component={AddressesScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="PaymentMethods" 
         component={PaymentMethodsScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="AddAddress" 
         component={AddAddressScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
       <Stack.Screen 
         name="AddPaymentMethod" 
         component={AddPaymentMethodScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
     </Stack.Navigator>
   );
@@ -156,11 +175,26 @@ const HomeStack = () => {
 const ProfileStack = () => {
   return (
     <Stack.Navigator
+      id="ProfileStack"
       screenOptions={{
         headerShown: false,
       }}
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} />
+      <Stack.Screen 
+        name="ProductDetail" 
+        component={ProductDetailScreen}
+        options={{
+          animationEnabled: true,
+        } as any}
+      />
+      <Stack.Screen 
+        name="Cart" 
+        component={CartScreen}
+        options={{
+          animationEnabled: true,
+        } as any}
+      />
       <Stack.Screen name="CreateStore" component={CreateStoreScreen} />
       <Stack.Screen name="MyStore" component={MyStoreScreen} />
       <Stack.Screen name="AddProduct" component={AddProductScreen} />
@@ -182,6 +216,7 @@ const ProfileStack = () => {
 const InboxStack = () => {
   return (
     <Stack.Navigator
+      id="InboxStack"
       screenOptions={{
         headerShown: false,
       }}
@@ -192,18 +227,17 @@ const InboxStack = () => {
         component={ChatDetailScreen}
         options={{
           animationEnabled: true,
-        }}
+        } as any}
       />
     </Stack.Navigator>
   );
 };
 
-import { SafeAreaView } from 'react-native-safe-area-context';
-
 const AppStack = () => {
   return (
     <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: COLORS.white }}>
       <Tab.Navigator
+        id="AppTabs"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: COLORS.primary,
@@ -277,11 +311,10 @@ const AppStack = () => {
 };
 
 
-export const Navigation = ({ isLoggedIn }) => {
-  // Always show AppStack (main app) for now
+export const Navigation = ({ isLoggedIn }: { isLoggedIn: boolean }) => {
   return (
-    <NavigationContainer>
-      <AppStack />
+    <NavigationContainer key={isLoggedIn ? 'app' : 'auth'}>
+      {isLoggedIn ? <AppStack /> : <AuthStack />}
     </NavigationContainer>
   );
 };

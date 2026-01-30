@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import Store from '../models/Store';
 import Product from '../models/Product';
+import User from '../models/User';
 
 export const createStore = async (req: Request, res: Response) => {
   try {
@@ -22,7 +23,6 @@ export const createStore = async (req: Request, res: Response) => {
     await store.save();
 
     // Update user as store owner
-    const User = require('../models/User');
     await User.findByIdAndUpdate(req.user.userId, {
       isStore: true,
       storeId: store._id,

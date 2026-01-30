@@ -1,5 +1,42 @@
 import mongoose from 'mongoose';
 
+const deliveryAddressSchema = new mongoose.Schema(
+  {
+    fullName: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    street: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: '' },
+    country: { type: String, default: '' },
+    zip: { type: String, default: '' },
+    isDefault: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const paymentMethodSchema = new mongoose.Schema(
+  {
+    type: { type: String, default: 'card' },
+  },
+  { _id: false }
+);
+
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+      required: true,
+    },
+    at: {
+      type: Date,
+      default: Date.now,
+      required: true,
+    },
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -19,7 +56,7 @@ const orderSchema = new mongoose.Schema({
     required: true,
   },
   deliveryAddress: {
-    type: String,
+    type: deliveryAddressSchema,
     required: true,
   },
   status: {
@@ -27,14 +64,22 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
     default: 'pending',
   },
+  statusHistory: {
+    type: [statusHistorySchema],
+    default: () => [{ status: 'pending', at: new Date() }],
+  },
   paymentMethod: {
-    type: String,
-    default: 'card',
+    type: paymentMethodSchema,
+    default: () => ({ type: 'card' }),
   },
   paymentStatus: {
     type: String,
     enum: ['pending', 'completed', 'failed'],
     default: 'pending',
+  },
+  paymentIntentId: {
+    type: String,
+    default: '',
   },
   createdAt: {
     type: Date,

@@ -24,6 +24,10 @@ const messageSchema = new mongoose_1.default.Schema({
         type: String,
         required: true,
     },
+    clientMessageId: {
+        type: String,
+        default: null,
+    },
     isRead: {
         type: Boolean,
         default: false,
@@ -33,5 +37,6 @@ const messageSchema = new mongoose_1.default.Schema({
         default: Date.now,
     },
 });
+messageSchema.index({ sender: 1, clientMessageId: 1 }, { unique: true, sparse: true });
 const Message = mongoose_1.default.model('Message', messageSchema);
 exports.default = Message;

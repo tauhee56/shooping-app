@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { orderAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -16,67 +18,124 @@ const COLORS = {
 const OrdersScreen = ({ navigation }) => {
   const [selectedTab, setSelectedTab] = useState('All');
 
-  const orders = [
-    {
-      id: '1',
-      orderNumber: 'ORD-2024-001',
-      date: 'Dec 26, 2024',
-      status: 'Delivered',
-      statusColor: '#4CAF50',
-      total: 87.97,
-      items: [
-        {
-          name: 'Lavender Soap',
-          store: 'Soap Queen',
-          image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108',
-          quantity: 2,
-        },
-        {
-          name: 'Body Oil',
-          store: 'Boyou',
-          image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af',
-          quantity: 1,
-        },
-      ],
-    },
-    {
-      id: '2',
-      orderNumber: 'ORD-2024-002',
-      date: 'Dec 27, 2024',
-      status: 'In Transit',
-      statusColor: '#FF9800',
-      total: 45.00,
-      items: [
-        {
-          name: 'Ceramic Bowl Set',
-          store: 'Gelupo',
-          image: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61',
-          quantity: 1,
-        },
-      ],
-    },
-    {
-      id: '3',
-      orderNumber: 'ORD-2024-003',
-      date: 'Dec 28, 2024',
-      status: 'Processing',
-      statusColor: '#2196F3',
-      total: 129.99,
-      items: [
-        {
-          name: 'Handmade Candles',
-          store: 'Natural Essence',
-          image: 'https://images.unsplash.com/photo-1602874801006-e24b9a3b7a91',
-          quantity: 3,
-        },
-      ],
-    },
-  ];
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  const getStoreName = (store: any): string => {
+    if (!store) return '';
+    if (typeof store === 'string') return store;
+    if (typeof store === 'object') return store?.name || '';
+    return '';
+  };
+
+  const formatDate = (input?: any) => {
+    const d = input ? new Date(input) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+  };
+
+  const toOrderNumber = (order: any) => {
+    const id = String(order?._id || order?.id || '');
+    const suffix = id ? id.slice(-4).toUpperCase() : '0000';
+    const d = order?.createdAt ? new Date(order.createdAt) : null;
+    const year = d && !Number.isNaN(d.getTime()) ? d.getFullYear() : new Date().getFullYear();
+    return `ORD-${year}-${suffix}`;
+  };
+
+  const mapStatus = (statusRaw?: string) => {
+    const status = (statusRaw || '').toLowerCase();
+    switch (status) {
+      case 'delivered':
+        return { label: 'Delivered', color: '#4CAF50', tab: 'Delivered' };
+      case 'shipped':
+        return { label: 'In Transit', color: '#FF9800', tab: 'Processing' };
+      case 'confirmed':
+        return { label: 'Processing', color: '#2196F3', tab: 'Processing' };
+      case 'pending':
+        return { label: 'Processing', color: '#2196F3', tab: 'Processing' };
+      case 'cancelled':
+        return { label: 'Cancelled', color: '#F44336', tab: 'All' };
+      default:
+        return { label: 'Processing', color: '#2196F3', tab: 'Processing' };
+    }
+  };
+
+  const loadOrders = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await orderAPI.getMyOrders();
+      const apiOrders = Array.isArray(res.data) ? res.data : [];
+
+      const mapped = apiOrders.map((o: any) => {
+        const statusInfo = mapStatus(o?.status);
+        const items = Array.isArray(o?.items) ? o.items : [];
+
+        return {
+          id: String(o?._id || ''),
+          orderId: String(o?._id || ''),
+          orderNumber: toOrderNumber(o),
+          date: formatDate(o?.createdAt),
+          status: statusInfo.label,
+          statusColor: statusInfo.color,
+          total: typeof o?.totalAmount === 'number' ? o.totalAmount : Number(o?.totalAmount || 0),
+          rawStatus: o?.status,
+          tab: statusInfo.tab,
+          deliveryAddress: o?.deliveryAddress,
+          items: items.map((it: any) => {
+            const p = it?.product;
+            const storeName = getStoreName(p?.store);
+
+            const image =
+              (p && Array.isArray(p?.images) && p.images[0]) ||
+              (p && p?.image) ||
+              '';
+
+            return {
+              name: p?.name || 'Product',
+              store: storeName,
+              image,
+              quantity: typeof it?.quantity === 'number' ? it.quantity : Number(it?.quantity || 1),
+            };
+          }),
+        };
+      });
+
+      setOrders(mapped.filter((o: any) => !!o?.id));
+    } catch (e: any) {
+      setOrders([]);
+      setError(getErrorMessage(e, 'Failed to load orders'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled) return;
+      await loadOrders();
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredOrders = useMemo(() => {
+    if (selectedTab === 'All') return orders;
+    if (selectedTab === 'Delivered') return orders.filter((o) => o?.tab === 'Delivered');
+    if (selectedTab === 'Processing') return orders.filter((o) => o?.tab === 'Processing');
+    return orders;
+  }, [orders, selectedTab]);
 
   const renderOrder = ({ item }) => (
     <TouchableOpacity 
       style={styles.orderCard}
-      onPress={() => navigation.navigate('OrderDetail', { order: item })}
+      onPress={() => navigation.navigate('OrderDetail', { orderId: item.orderId, order: item })}
     >
       <View style={styles.orderHeader}>
         <View>
@@ -91,7 +150,11 @@ const OrdersScreen = ({ navigation }) => {
       <View style={styles.orderItems}>
         {item.items.map((product, index) => (
           <View key={index} style={styles.orderItem}>
-            <Image source={{ uri: product.image }} style={styles.orderItemImage} />
+            {isValidImageUri(product.image) ? (
+              <Image source={{ uri: product.image }} style={styles.orderItemImage} />
+            ) : (
+              <View style={styles.orderItemImage} />
+            )}
             <View style={styles.orderItemInfo}>
               <Text style={styles.orderItemName} numberOfLines={1}>{product.name}</Text>
               <Text style={styles.orderItemStore}>{product.store}</Text>
@@ -139,13 +202,31 @@ const OrdersScreen = ({ navigation }) => {
         ))}
       </View>
 
-      <FlatList
-        data={orders}
-        renderItem={renderOrder}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.ordersList}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading && orders.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      ) : error && orders.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16, marginBottom: 10 }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            onPress={loadOrders}
+            style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredOrders}
+          renderItem={renderOrder}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.ordersList}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </SafeAreaView>
   );
 };

@@ -43,9 +43,19 @@ src/
 
 ## API Connection
 
-Update `src/utils/api.js` with your backend URL:
-```javascript
-const API_URL = 'http://YOUR_IP:5000/api';
+This app uses `src/utils/api.ts`.
+
+- Set `EXPO_PUBLIC_API_URL` in a local `.env` file (recommended), or
+- It will auto-guess your dev machine IP using Expo `hostUri`.
+
+1. Create `.env` from `.env.example`
+```powershell
+Copy-Item .env.example .env
+```
+
+2. Set your backend API URL inside `.env`
+```dotenv
+EXPO_PUBLIC_API_URL=http://YOUR_IP:5000/api
 ```
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
@@ -53,17 +63,7 @@ const API_URL = 'http://YOUR_IP:5000/api';
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Start developing by editing files in `src/`.
 
 ## Learn more
 

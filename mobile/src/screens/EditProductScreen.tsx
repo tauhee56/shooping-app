@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { storeAPI } from '../utils/api';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -18,6 +19,14 @@ const EditProductScreen = ({ navigation, route }) => {
   const [description, setDescription] = useState(product?.description || '');
   const [price, setPrice] = useState(String(product?.price ?? ''));
   const [category, setCategory] = useState(product?.category || '');
+  const [codEnabled, setCodEnabled] = useState(
+    typeof product?.paymentOptionsOverride?.codEnabled === 'boolean' ? product.paymentOptionsOverride.codEnabled : false
+  );
+  const [stripeEnabled, setStripeEnabled] = useState(
+    typeof product?.paymentOptionsOverride?.stripeEnabled === 'boolean'
+      ? product.paymentOptionsOverride.stripeEnabled
+      : true
+  );
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
@@ -32,11 +41,18 @@ const EditProductScreen = ({ navigation, route }) => {
         description,
         price: parseFloat(price),
         category,
+        paymentOptionsOverride: {
+          codEnabled,
+          stripeEnabled,
+        },
       });
       Alert.alert('Success', 'Product updated');
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.message || 'Failed to update product');
+      Alert.alert(
+        getErrorTitle(e, 'Failed to update product'),
+        getErrorMessage(e, 'Failed to update product')
+      );
     } finally {
       setLoading(false);
     }
@@ -72,6 +88,33 @@ const EditProductScreen = ({ navigation, route }) => {
             <TextInput value={category} onChangeText={setCategory} placeholder="Category" placeholderTextColor={COLORS.gray} style={styles.input} />
           </View>
         </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.checkboxItem}
+            onPress={() => setCodEnabled((v) => !v)}
+            disabled={loading}
+          >
+            <MaterialIcons
+              name={codEnabled ? 'check-circle' : 'check-circle-outline'}
+              size={20}
+              color={codEnabled ? COLORS.primary : COLORS.gray}
+            />
+            <Text style={styles.checkboxText}>Enable Cash on Delivery (COD)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.checkboxItem}
+            onPress={() => setStripeEnabled((v) => !v)}
+            disabled={loading}
+          >
+            <MaterialIcons
+              name={stripeEnabled ? 'check-circle' : 'check-circle-outline'}
+              size={20}
+              color={stripeEnabled ? COLORS.primary : COLORS.gray}
+            />
+            <Text style={styles.checkboxText}>Enable Card Payment (Stripe)</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <TouchableOpacity style={[styles.saveButton, loading && { opacity: 0.6 }]} onPress={handleSave} disabled={loading}>
@@ -91,6 +134,9 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#E7E7E7', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: COLORS.secondary },
   textArea: { height: 120, textAlignVertical: 'top' },
   row: { flexDirection: 'row' },
+  section: { borderTopWidth: 1, borderTopColor: '#F0F0F0', paddingTop: 12 },
+  checkboxItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  checkboxText: { marginLeft: 12, fontSize: 14, color: COLORS.secondary },
   saveButton: { backgroundColor: COLORS.primary, margin: 16, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   saveText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
 });

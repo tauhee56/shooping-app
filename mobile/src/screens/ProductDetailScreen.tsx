@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Dimensions, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFavorites } from '../context/FavoritesContext';
-
+import { useCart } from '../context/CartContext';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
+import { productAPI } from '../utils/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -19,28 +21,74 @@ const ProductDetailScreen = ({ route, navigation }) => {
   const { productId } = route.params;
   const [quantity, setQuantity] = useState(1);
   const [expandedSections, setExpandedSections] = useState({});
+  const [product, setProduct] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toggleFavorite, isFavorite } = useFavorites();
+  const { addToCart } = useCart();
 
-  const handleAddToCart = () => {
-    // In real app, add to cart context/API
-    Alert.alert('Added to cart', `Added ${quantity} item(s) to cart`);
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProduct = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await productAPI.getProductById(productId);
+        if (!cancelled) {
+          setProduct(res.data);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(getErrorMessage(e, 'Failed to load product'));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadProduct();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+
+  const handleAddToCart = async () => {
+    try {
+      await addToCart(productId, quantity);
+      Alert.alert('Added to cart', `Added ${quantity} item(s) to cart`);
+    } catch (error) {
+      Alert.alert(getErrorTitle(error, 'Failed to add to cart'), getErrorMessage(error, 'Failed to add to cart'));
+    }
   };
 
-  // Get product - in real app, fetch from API
-  const product = {
-    id: productId,
-    name: 'Lavender Handmade Soap - 120g',
-    store: 'Soap queen',
-    price: 32,
-    rating: 9,
-    reviews: 32,
-    image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371',
-    description: 'A natural lavender soap made with plant-based oils to soothe and moisturize the skin. You just lathered some well...see more',
-    stock: 23,
-    weight: '120g',
-    ingredients: 'Lavender oil, Coconut oil, Palm oil, Shea butter, Water, Sodium hydroxide',
-    benefits: 'Moisturizing, Soothing, Anti-inflammatory, Gentle on skin',
-  };
+  const storeName =
+    product?.store && typeof product.store === 'object'
+      ? product.store?.name
+      : typeof product?.store === 'string'
+        ? product.store
+        : '';
+
+  const mainImage =
+    (Array.isArray(product?.images) && product.images.length > 0 ? product.images[0] : null) ||
+    product?.image ||
+    '';
+
+  const ingredientsText = Array.isArray(product?.ingredients)
+    ? product.ingredients.filter(Boolean).join(', ')
+    : typeof product?.ingredients === 'string'
+      ? product.ingredients
+      : '';
+
+  const benefitsText = Array.isArray(product?.benefits)
+    ? product.benefits.filter(Boolean).join(', ')
+    : typeof product?.benefits === 'string'
+      ? product.benefits
+      : '';
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({
@@ -89,23 +137,63 @@ const ProductDetailScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Product Image */}
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: product.image }} style={styles.productImage} />
-        </View>
+        {loading ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator />
+          </View>
+        ) : error ? (
+          <View style={{ paddingHorizontal: 20, paddingVertical: 20, alignItems: 'center' }}>
+            <Text style={{ color: COLORS.gray, textAlign: 'center', marginBottom: 12 }}>{error}</Text>
+            <TouchableOpacity
+              style={{ backgroundColor: COLORS.secondary, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10 }}
+              onPress={() => {
+                setProduct(null);
+                setError(null);
+                setLoading(true);
+                productAPI
+                  .getProductById(productId)
+                  .then((res) => {
+                    setProduct(res.data);
+                  })
+                  .catch((e) => {
+                    setError(getErrorMessage(e, 'Failed to load product'));
+                  })
+                  .finally(() => {
+                    setLoading(false);
+                  });
+              }}
+            >
+              <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : !product ? (
+          <View style={{ paddingHorizontal: 20, paddingVertical: 20, alignItems: 'center' }}>
+            <Text style={{ color: COLORS.gray }}>Product not found</Text>
+          </View>
+        ) : (
+          <View>
+
+          {/* Product Image */}
+          <View style={styles.imageContainer}>
+            {isValidImageUri(mainImage) ? (
+              <Image source={{ uri: mainImage }} style={styles.productImage} />
+            ) : (
+              <View style={styles.productImage} />
+            )}
+          </View>
 
         {/* Product Info */}
         <View style={styles.infoContainer}>
           {/* Title and Price */}
           <Text style={styles.productName}>{product.name}</Text>
-          <Text style={styles.storeName}>{product.store}</Text>
+          <Text style={styles.storeName}>{storeName}</Text>
           <Text style={styles.price}>£{product.price}</Text>
 
           {/* Rating */}
           <View style={styles.ratingContainer}>
             <MaterialIcons name="star" size={18} color="#FFD700" />
             <Text style={styles.rating}>{product.rating}</Text>
-            <Text style={styles.reviews}>({product.reviews})</Text>
+            <Text style={styles.reviews}>({Array.isArray(product.reviews) ? product.reviews.length : product.reviews || 0})</Text>
           </View>
 
           {/* Description */}
@@ -119,17 +207,17 @@ const ProductDetailScreen = ({ route, navigation }) => {
             <ExpandableSection 
               title="Weight: size" 
               icon="scale" 
-              content={product.weight}
+              content={product.weight || ''}
             />
             <ExpandableSection 
               title="Ingredients List" 
               icon="list" 
-              content={product.ingredients}
+              content={ingredientsText}
             />
             <ExpandableSection 
               title="Benefits & Features" 
               icon="favorite" 
-              content={product.benefits}
+              content={benefitsText}
             />
           </View>
 
@@ -166,10 +254,17 @@ const ProductDetailScreen = ({ route, navigation }) => {
           <View style={styles.optionsContainer}>
             <TouchableOpacity 
               style={[styles.optionButton, styles.optionButtonPink]}
-              onPress={() => toggleFavorite(product)}
+              onPress={() => toggleFavorite({
+                id: product._id,
+                name: product.name,
+                store: storeName,
+                price: product.price,
+                rating: product.rating,
+                image: mainImage,
+              })}
             >
-              <MaterialIcons name={isFavorite(productId) ? "favorite" : "favorite-border"} size={20} color={COLORS.white} />
-              <Text style={styles.optionPrice}>£ 23</Text>
+              <MaterialIcons name={isFavorite(product._id) ? "favorite" : "favorite-border"} size={20} color={COLORS.primary} />
+              <Text style={styles.optionButtonText}>Wishlist</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.optionButton, styles.optionButtonWhite]}>
               <Text style={[styles.optionPrice, { color: COLORS.secondary }]}>£ 234</Text>
@@ -182,11 +277,12 @@ const ProductDetailScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 };
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -402,6 +498,11 @@ const styles = StyleSheet.create({
     borderColor: '#FFE5B4',
   },
   optionPrice: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+  optionButtonText: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.white,

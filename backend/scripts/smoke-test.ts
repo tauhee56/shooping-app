@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+import 'dotenv/config';
 import axios, { AxiosInstance } from 'axios';
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:5000/api';
+const ALLOW_SMOKE_TEST = String(process.env.ALLOW_SMOKE_TEST || '').toLowerCase() === 'true';
+const BASE_URL = process.env.BASE_URL;
+
+if (!ALLOW_SMOKE_TEST) {
+  throw new Error('Smoke test blocked: set ALLOW_SMOKE_TEST=true to run');
+}
+
+if (!BASE_URL || typeof BASE_URL !== 'string' || BASE_URL.trim().length === 0) {
+  throw new Error('Smoke test blocked: set BASE_URL explicitly (e.g. http://localhost:5000/api)');
+}
 
 function log(step: string, ok: boolean = true, extra: string = ''): void {
   console.log(`${ok ? '✅' : '❌'} ${step}${extra ? ' - ' + extra : ''}`);
 }
-
 
 (async (): Promise<void> => {
   try {
@@ -53,7 +62,8 @@ function log(step: string, ok: boolean = true, extra: string = ''): void {
 
     // List products and get detail
     const list = await axios.get(`${BASE_URL}/products`).then(r => r.data);
-    if (!Array.isArray(list) || !list.length) throw new Error('Products list empty');
+    const productsList = Array.isArray(list) ? list : list?.products;
+    if (!Array.isArray(productsList) || !productsList.length) throw new Error('Products list empty');
     const detail = await axios.get(`${BASE_URL}/products/${product._id}`).then(r => r.data);
     if (!detail || !detail._id) throw new Error('Product detail failed');
     log('Products list + detail');

@@ -9,6 +9,16 @@ const productSchema = new mongoose_1.default.Schema({
         type: String,
         required: true,
     },
+    paymentOptionsOverride: {
+        codEnabled: {
+            type: Boolean,
+            default: undefined,
+        },
+        stripeEnabled: {
+            type: Boolean,
+            default: undefined,
+        },
+    },
     description: {
         type: String,
         required: true,
@@ -66,10 +76,8 @@ const productSchema = new mongoose_1.default.Schema({
             type: mongoose_1.default.Schema.Types.ObjectId,
             ref: 'User',
         }],
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
+}, {
+    timestamps: true,
 });
 const Product = mongoose_1.default.model('Product', productSchema);
 exports.default = Product;

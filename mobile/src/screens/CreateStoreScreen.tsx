@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Dimensions, Alert, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { storeAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -22,10 +23,108 @@ const CreateStoreScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [logoImage, setLogoImage] = useState(null);
+  const [storeType, setStoreType] = useState('Handmade Products');
+  const [storeTags, setStoreTags] = useState<string[]>([]);
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [tagsModalVisible, setTagsModalVisible] = useState(false);
 
-  const handlePickLogo = () => {
-    // Placeholder for image picker
-    setLogoImage('https://images.unsplash.com/photo-1571875257727-256c39da42af');
+  const STORE_TYPES = ['Handmade Products', 'Beauty', 'Clothing', 'Accessories', 'Home & Living', 'Food'];
+  const STORE_TAGS = [
+    'Handmade',
+    'Organic',
+    'Vegan',
+    'Skincare',
+    'Soap',
+    'Candles',
+    'Jewelry',
+    'Gifts',
+    'New',
+    'Sale',
+  ];
+
+  const handlePickLogo = async () => {
+    let ImagePicker: any;
+    try {
+      ImagePicker = require('expo-image-picker');
+    } catch {
+      Alert.alert('Missing dependency', 'Please install expo-image-picker to enable logo upload.');
+      return;
+    }
+
+    let FileSystem: any;
+    try {
+      FileSystem = require('expo-file-system');
+    } catch {
+      FileSystem = null;
+    }
+
+    try {
+      const existingPerm =
+        typeof ImagePicker.getMediaLibraryPermissionsAsync === 'function'
+          ? await ImagePicker.getMediaLibraryPermissionsAsync()
+          : null;
+      const hadPermission = Boolean(existingPerm?.granted);
+
+      const perm = hadPermission ? existingPerm : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm?.granted) {
+        Alert.alert('Permission required', 'Please allow photo library access to upload your store logo.');
+        return;
+      }
+
+      if (!hadPermission && (existingPerm?.status === 'undetermined' || existingPerm?.status === undefined)) {
+        Alert.alert('Permission granted', 'Now tap again to pick a photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes:
+          (ImagePicker as any).MediaType?.Images ??
+          (ImagePicker as any).MediaTypeOptions?.Images ??
+          (ImagePicker as any).MediaType?.IMAGE,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result?.canceled) return;
+      const asset = Array.isArray(result?.assets) ? result.assets[0] : null;
+      const uri = asset?.uri;
+      if (!uri) return;
+
+      let uploadUri = uri;
+      if (FileSystem && typeof uploadUri === 'string' && !uploadUri.startsWith('file://')) {
+        try {
+          const extMatch = String(asset?.fileName || asset?.uri || '').match(/\.(jpg|jpeg|png|webp|gif|heic|heif)$/i);
+          const ext = extMatch ? extMatch[0] : '.jpg';
+          const dest =
+            String(FileSystem.cacheDirectory || FileSystem.documentDirectory || '') +
+            `upload-logo-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`;
+          if (dest) {
+            await FileSystem.copyAsync({ from: uploadUri, to: dest });
+            uploadUri = dest;
+          }
+        } catch {
+        }
+      }
+
+      const formData = new FormData();
+      formData.append('image', {
+        uri: uploadUri,
+        name: 'logo.jpg',
+        type: asset?.mimeType || 'image/jpeg',
+      } as any);
+
+      const uploadRes = await storeAPI.uploadStoreLogo(formData);
+      const url = String(uploadRes?.data?.url || '').trim();
+      if (!url) {
+        Alert.alert('Error', 'Upload failed');
+        return;
+      }
+
+      setLogoImage(url as any);
+    } catch (e: any) {
+      Alert.alert('Error', getErrorMessage(e, 'Failed to upload logo'));
+    }
   };
 
   const handleCreateStore = async () => {
@@ -40,11 +139,14 @@ const CreateStoreScreen = ({ navigation }) => {
         name: storeName,
         description,
         location,
+        logo: typeof logoImage === 'string' && logoImage.trim() ? logoImage.trim() : undefined,
+        storeType: typeof storeType === 'string' && storeType.trim() ? storeType.trim() : undefined,
+        tags: Array.isArray(storeTags) ? storeTags : [],
       });
       
       navigation.navigate('MyStore', { storeId: response.data._id });
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to create store');
+      setError(getErrorMessage(error, 'Failed to create store'));
     } finally {
       setLoading(false);
     }
@@ -62,10 +164,91 @@ const CreateStoreScreen = ({ navigation }) => {
           <View style={{ width: 24 }} />
         </View>
 
+        <Modal
+          visible={typeModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setTypeModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Select store type</Text>
+              <ScrollView style={{ maxHeight: 320 }}>
+                {STORE_TYPES.map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={styles.modalItem}
+                    onPress={() => {
+                      setStoreType(t);
+                      setTypeModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.modalItemText}>{t}</Text>
+                    {storeType === t ? <MaterialIcons name="check" size={18} color={COLORS.primary} /> : null}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setTypeModalVisible(false)}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={tagsModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setTagsModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Select tags</Text>
+              <ScrollView style={{ maxHeight: 320 }}>
+                {STORE_TAGS.map((tag) => {
+                  const selected = storeTags.includes(tag);
+                  return (
+                    <TouchableOpacity
+                      key={tag}
+                      style={styles.modalItem}
+                      onPress={() => {
+                        setStoreTags((prev) => {
+                          const next = Array.isArray(prev) ? prev.slice() : [];
+                          const idx = next.indexOf(tag);
+                          if (idx >= 0) {
+                            next.splice(idx, 1);
+                          } else {
+                            next.push(tag);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <Text style={styles.modalItemText}>{tag}</Text>
+                      {selected ? <MaterialIcons name="check" size={18} color={COLORS.primary} /> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setTagsModalVisible(false)}>
+                <Text style={styles.modalCloseText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* Logo Section */}
         <TouchableOpacity style={styles.logoSection} onPress={handlePickLogo}>
           <View style={styles.logoPlaceholder}>
-            <MaterialIcons name="image" size={40} color={COLORS.gray} />
+            {typeof logoImage === 'string' && logoImage.trim() ? (
+              <Image
+                source={{ uri: logoImage.trim() }}
+                style={{ width: '100%', height: '100%', borderRadius: 10 }}
+                resizeMode="cover"
+              />
+            ) : (
+              <MaterialIcons name="image" size={40} color={COLORS.gray} />
+            )}
           </View>
           <Text style={styles.logoText}>{logoImage ? 'Change Logo' : 'Upload Logo'}</Text>
         </TouchableOpacity>
@@ -125,19 +308,21 @@ const CreateStoreScreen = ({ navigation }) => {
           {/* Store Type */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Store type</Text>
-            <View style={styles.selectContainer}>
-              <Text style={styles.selectText}>Handmade Products</Text>
+            <TouchableOpacity style={styles.selectContainer} onPress={() => setTypeModalVisible(true)} disabled={loading}>
+              <Text style={styles.selectText}>{storeType || 'Select type'}</Text>
               <MaterialIcons name="arrow-drop-down" size={20} color={COLORS.gray} />
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Store Tags */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Store tags</Text>
-            <View style={styles.selectContainer}>
-              <Text style={styles.selectText}>Select tags</Text>
+            <TouchableOpacity style={styles.selectContainer} onPress={() => setTagsModalVisible(true)} disabled={loading}>
+              <Text style={styles.selectText} numberOfLines={1}>
+                {storeTags.length > 0 ? storeTags.join(', ') : 'Select tags'}
+              </Text>
               <MaterialIcons name="arrow-drop-down" size={20} color={COLORS.gray} />
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* Settings Section */}
@@ -271,6 +456,45 @@ const styles = StyleSheet.create({
   selectText: {
     fontSize: 14,
     color: COLORS.gray,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 12,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDEDED',
+  },
+  modalItemText: {
+    fontSize: 14,
+    color: COLORS.secondary,
+  },
+  modalCloseBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  modalCloseText: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   settingsSection: {
     borderTopWidth: 1,

@@ -121,7 +121,12 @@ export const updateProfile = async (req: Request, res: Response) => {
 
 export const followUser = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.params;
+    const userIdParam = (req.params as any).userId as string | string[] | undefined;
+    const userId = Array.isArray(userIdParam) ? userIdParam[0] : userIdParam;
+    if (!userId) {
+      return res.status(400).json({ message: 'User id is required' });
+    }
+
     const currentUser = await User.findById(req.user.userId);
     const targetUser = await User.findById(userId);
 

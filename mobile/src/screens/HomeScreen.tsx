@@ -1,9 +1,12 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, TextInput, Dimensions } from 'react-native';
+import React, { useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, TextInput, Dimensions, ActivityIndicator, UIManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { productAPI } from '../utils/api';
+import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
+import { productAPI, storeAPI } from '../utils/api';
 import { useFavorites } from '../context/FavoritesContext';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 45) / 2;
@@ -16,98 +19,217 @@ const COLORS = {
   gray: '#999999',
 };
 
-const storeStories = [
-  { id: '1', name: 'Post', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c', isAdd: true },
-  { id: '2', name: 'beyou', image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af' },
-  { id: '3', name: 'glassesforall', image: 'https://images.unsplash.com/photo-1574169208507-84376144848b' },
-  { id: '4', name: 'motorbike...', image: 'https://images.unsplash.com/photo-1558981403-c5f9899a28bc' },
-  { id: '5', name: 'vintageclo', image: 'https://images.unsplash.com/photo-1445205170230-053b83016050' },
-];
+const getStoreName = (store: any): string => {
+  if (!store) return '';
+  if (typeof store === 'string') return store;
+  if (typeof store === 'object') return store?.name || '';
+  return '';
+};
+
+const appendCacheBuster = (uri: any, token: any): string => {
+  const clean = typeof uri === 'string' ? uri.trim() : '';
+  if (!clean) return '';
+  if (!token) return clean;
+  const t = String(token);
+  if (!t) return clean;
+  const sep = clean.includes('?') ? '&' : '?';
+  return `${clean}${sep}v=${encodeURIComponent(t)}`;
+};
+
+const HAS_RN_SVG =
+  typeof (UIManager as any)?.getViewManagerConfig === 'function' &&
+  !!((UIManager as any).getViewManagerConfig('RNSVGPath') || (UIManager as any).getViewManagerConfig('RCTRNSVGPath'));
+
+const CategoryVectorIcon = ({
+  type,
+  size,
+  color,
+}: {
+  type: 'trending' | 'near' | 'fashion' | 'food' | 'tech';
+  size: number;
+  color: string;
+}) => {
+  const strokeWidth = 2;
+
+  if (!HAS_RN_SVG) {
+    const fallbackName =
+      type === 'trending'
+        ? 'trending-up'
+        : type === 'near'
+          ? 'near-me'
+          : type === 'fashion'
+            ? 'checkroom'
+            : type === 'food'
+              ? 'restaurant'
+              : 'devices';
+
+    return <MaterialIcons name={fallbackName as any} size={size} color={color} />;
+  }
+
+  if (type === 'trending') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path d="M16 7h6v6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="m22 7-8.5 8.5-5-5L2 17" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  }
+
+  if (type === 'near') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Circle cx="12" cy="10" r="3" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  }
+
+  if (type === 'fashion') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
+    );
+  }
+
+  if (type === 'food') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M7 2v20" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+        <Path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    );
+  }
+
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M20.054 15.987H3.946" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+};
 
 const categories = [
-  { id: '1', name: 'Trending' },
-  { id: '2', name: 'Near me' },
-  { id: '3', name: 'Fashion' },
-  { id: '4', name: 'Food' },
-  { id: '5', name: 'Tech' },
+  { id: '1', name: 'Trending', vector: 'trending' },
+  { id: '2', name: 'Near me', vector: 'near' },
+  { id: '3', name: 'Fashion', vector: 'fashion' },
+  { id: '4', name: 'Food', vector: 'food' },
+  { id: '5', name: 'Tech', vector: 'tech' },
 ];
 
 const HomeScreen = ({ navigation }) => {
   const [products, setProducts] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [storesError, setStoresError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [selectedTab, setSelectedTab] = useState('Products');
   const [selectedCategory, setSelectedCategory] = useState('1');
   const [viewMode, setViewMode] = useState('grid'); // 'list' or 'grid'
   const { toggleFavorite, isFavorite } = useFavorites();
 
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  const storeStories = useMemo(() => {
+    const list = Array.isArray(stores) ? stores : [];
+    const storyList = list.map((s: any, idx: number) => {
+      const uri = s?.image || (Array.isArray(s?.images) ? s.images[0] : '') || '';
+      return {
+        id: String(s?.id || s?._id || idx),
+        name: String(s?.name || '').slice(0, 12),
+        image: uri,
+        isAdd: false,
+      };
+    });
+    return [{ id: 'post', name: 'Post', image: '', isAdd: true }, ...storyList];
+  }, [stores]);
+
   useEffect(() => {
-    fetchFeaturedProducts();
+    fetchLatestProducts();
     fetchStores();
   }, []);
 
-  const fetchFeaturedProducts = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      fetchLatestProducts();
+      fetchStores();
+    }, [])
+  );
+
+  const fetchLatestProducts = async () => {
     setLoading(true);
+    setProductsError(null);
     try {
-      const response = await productAPI.getFeaturedProducts();
-      setProducts(response.data);
+      const response = await productAPI.getAllProducts({ page: 1, limit: 20 });
+      const payload = response?.data;
+      const list = Array.isArray(payload?.products) ? payload.products : [];
+      setProducts(list);
     } catch (error) {
       console.log('Error fetching products:', error);
+      setProducts([]);
+      setProductsError(getErrorMessage(error, 'Failed to load products'));
     } finally {
       setLoading(false);
     }
   };
 
   const fetchStores = async () => {
-    // Mock stores data matching screenshots
-    setStores([
-      {
-        id: '1',
-        name: 'Soap queen',
-        location: '23 Parsons green lane, London',
-        description: 'We sell perfumed soap made by hand in our London lab.',
-        image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108',
-        rating: 9.8,
-        products: 32,
-        delivery: true,
-        backgroundColor: '#6B7FCC',
-        images: [
-          'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108',
-          'https://images.unsplash.com/photo-1571875257727-256c39da42af',
-          'https://images.unsplash.com/photo-1598662957477-79de6e4b085e',
-          'https://images.unsplash.com/photo-1600857544200-b9624e6ccfcb',
-        ]
-      },
-      {
-        id: '2',
-        name: 'Boyou',
-        location: 'London',
-        description: 'We sell perfumed soap made by hand in our London lab.',
-        image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af',
-        rating: 9.0,
-        products: 54,
-        delivery: true,
-        backgroundColor: '#FF1493',
-        images: [
-          'https://images.unsplash.com/photo-1571875257727-256c39da42af',
-        ]
-      },
-      {
-        id: '3',
-        name: 'Gelupo',
-        location: '7 Archer St, London W1D 7AU, United Kingdom',
-        description: 'Dog Friendly',
-        image: 'https://images.unsplash.com/photo-1559620192-032c4bc4674e',
-        rating: 8.0,
-        products: 32,
-        delivery: false,
-        backgroundColor: '#F5E6D3',
-        textColor: '#000',
-        distance: '2km away',
-        images: []
-      }
-    ]);
+    setStoresLoading(true);
+    setStoresError(null);
+    try {
+      const response = await storeAPI.listStores();
+      const apiStores = Array.isArray(response.data) ? response.data : [];
+
+      const cardColors = ['#6B7FCC', '#FF1493', '#F5E6D3'];
+
+      const mapped = apiStores.map((s: any, index: number) => {
+        const backgroundColor = cardColors[index % cardColors.length];
+        const images = [s?.banner, s?.logo].filter(Boolean);
+
+        return {
+          id: s?._id,
+          name: s?.name,
+          location: s?.location || '',
+          description: s?.description || '',
+          image: s?.logo || s?.banner || '',
+          rating: typeof s?.rating === 'number' ? s.rating : 0,
+          products: Array.isArray(s?.products) ? s.products.length : 0,
+          delivery: false,
+          backgroundColor,
+          textColor: backgroundColor === '#F5E6D3' ? '#000' : undefined,
+          images,
+        };
+      });
+
+      setStores(mapped.filter((s: any) => !!s?.id));
+    } catch (error) {
+      console.log('Error fetching stores:', error);
+      setStores([]);
+      setStoresError(getErrorMessage(error, 'Failed to load stores'));
+    } finally {
+      setStoresLoading(false);
+    }
   };
 
   const renderStoreCard = ({ item }) => {
@@ -147,14 +269,14 @@ const HomeScreen = ({ navigation }) => {
             <Text style={[styles.storeCardName, isLightBg && { color: COLORS.secondary }]}>
               {item.name}
             </Text>
-            {item.rating && (
+            {Number(item?.rating || 0) > 0 ? (
               <View style={styles.storeRatingInline}>
                 <MaterialIcons name="star" size={16} color={isLightBg ? COLORS.secondary : COLORS.white} />
                 <Text style={[styles.storeRatingText, isLightBg && { color: COLORS.secondary }]}>
                   {item.rating}/10
                 </Text>
               </View>
-            )}
+            ) : null}
           </View>
           
           <View style={styles.storeLocationRow}>
@@ -192,6 +314,10 @@ const HomeScreen = ({ navigation }) => {
 
   const renderProductCard = ({ item }) => {
     const isListView = viewMode === 'list';
+    const storeName = getStoreName(item?.store) || 'Store';
+    const rawProductImageUri =
+      (Array.isArray(item?.images) && item.images.length > 0 ? item.images[0] : null) || item?.image || '';
+    const productImageUri = appendCacheBuster(rawProductImageUri, item?.updatedAt || item?.createdAt);
     
     if (isListView) {
       return (
@@ -200,10 +326,14 @@ const HomeScreen = ({ navigation }) => {
           onPress={() => navigation.navigate('ProductDetail', { productId: item._id })}
         >
           <View style={{position: 'relative', marginBottom: 12}}>
-            <Image
-              source={{ uri: item.images?.[0] || 'https://images.unsplash.com/photo-1505022610485-0249ba5b3675' }}
-              style={styles.productImageListFull}
-            />
+            {isValidImageUri(productImageUri) ? (
+              <Image
+                source={{ uri: productImageUri }}
+                style={styles.productImageListFull}
+              />
+            ) : (
+              <View style={styles.productImageListFull} />
+            )}
             {/* Image Carousel Dots */}
             <View style={styles.carouselDots}>
               <View style={[styles.dot, styles.dotActive]} />
@@ -214,12 +344,21 @@ const HomeScreen = ({ navigation }) => {
             {/* Rating Badge */}
             <View style={styles.productRatingBadge}>
               <Text style={styles.productRatingEmoji}>⭐</Text>
-              <Text style={styles.productRatingText}>{item.rating || '9'}/10</Text>
+              <Text style={styles.productRatingText}>{typeof item.rating === 'number' ? item.rating : Number(item.rating || 0)}/10</Text>
             </View>
             {/* Wishlist Button */}
             <TouchableOpacity 
               style={styles.productLikeButton}
-              onPress={() => toggleFavorite({ id: item._id, name: item.name, store: item.store, price: item.price, rating: item.rating, image: item.image })}
+              onPress={() =>
+                toggleFavorite({
+                  id: item._id,
+                  name: item.name,
+                  store: storeName,
+                  price: item.price,
+                  rating: item.rating,
+                  image: productImageUri,
+                })
+              }
             >
               <MaterialIcons name={isFavorite(item._id) ? "favorite" : "favorite-border"} size={22} color="#FF1493" />
             </TouchableOpacity>
@@ -228,12 +367,12 @@ const HomeScreen = ({ navigation }) => {
           <View style={styles.productInfo}>
             <View style={styles.productBrand}>
               <View style={styles.brandIcon} />
-              <Text style={styles.brandName}>{item.store || 'Boyou'}</Text>
+              <Text style={styles.brandName}>{storeName}</Text>
             </View>
-            <Text style={styles.productName} numberOfLines={2}>{item.name || 'Olive oil special body'}</Text>
+            <Text style={styles.productName} numberOfLines={2}>{item.name || ''}</Text>
             <View style={styles.productListFooterInfo}>
-              <Text style={styles.price}>£{item.price || '32'}</Text>
-              <Text style={styles.ratingInfo}>{item.rating || '9'}/10 ({item.reviews || '32'})</Text>
+              <Text style={styles.price}>£{typeof item.price === 'number' ? item.price : Number(item.price || 0)}</Text>
+              <Text style={styles.ratingInfo}>{typeof item.rating === 'number' ? item.rating : Number(item.rating || 0)}/10 ({Array.isArray(item.reviews) ? item.reviews.length : item.reviews || 0})</Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -247,21 +386,34 @@ const HomeScreen = ({ navigation }) => {
         onPress={() => navigation.navigate('ProductDetail', { productId: item._id })}
       >
         {/* Product Image */}
-        <Image 
-          source={{ uri: item.images?.[0] || 'https://images.unsplash.com/photo-1505022610485-0249ba5b3675' }} 
-          style={styles.productImage} 
-        />
+        {isValidImageUri(productImageUri) ? (
+          <Image 
+            source={{ uri: productImageUri }} 
+            style={styles.productImage} 
+          />
+        ) : (
+          <View style={styles.productImage} />
+        )}
         
         {/* Rating Badge */}
         <View style={styles.productRatingBadge}>
           <Text style={styles.productRatingEmoji}>⭐</Text>
-          <Text style={styles.productRatingText}>{item.rating || '9'}/10</Text>
+          <Text style={styles.productRatingText}>{typeof item.rating === 'number' ? item.rating : Number(item.rating || 0)}/10</Text>
         </View>
         
         {/* Like Button */}
         <TouchableOpacity 
           style={styles.productLikeButton}
-          onPress={() => toggleFavorite({ id: item._id, name: item.name, store: item.store, price: item.price, rating: item.rating, image: item.images?.[0] })}
+          onPress={() =>
+            toggleFavorite({
+              id: item._id,
+              name: item.name,
+              store: storeName,
+              price: item.price,
+              rating: item.rating,
+              image: productImageUri,
+            })
+          }
         >
           <MaterialIcons name={isFavorite(item._id) ? "favorite" : "favorite-border"} size={20} color="#FF1493" />
         </TouchableOpacity>
@@ -270,10 +422,10 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.productInfo}>
           <View style={styles.productBrand}>
             <View style={styles.brandIcon} />
-            <Text style={styles.brandName}>{item.store || 'Boyou'}</Text>
+            <Text style={styles.brandName}>{storeName}</Text>
           </View>
-          <Text style={styles.productName} numberOfLines={1}>{item.name || 'Olive oil special body'}</Text>
-          <Text style={styles.price}>£{item.price || '325'}</Text>
+          <Text style={styles.productName} numberOfLines={1}>{item.name || ''}</Text>
+          <Text style={styles.price}>£{typeof item.price === 'number' ? item.price : Number(item.price || 0)}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -312,7 +464,11 @@ const HomeScreen = ({ navigation }) => {
                   {story.isAdd ? (
                     <MaterialIcons name="add" size={24} color={COLORS.white} />
                   ) : (
-                    <Image source={{ uri: story.image }} style={styles.storyImage} />
+                    isValidImageUri(story.image) ? (
+                      <Image source={{ uri: story.image }} style={styles.storyImage} />
+                    ) : (
+                      <View style={styles.storyImage} />
+                    )
                   )}
                 </View>
                 <Text style={styles.storyName} numberOfLines={1}>{story.name}</Text>
@@ -335,18 +491,24 @@ const HomeScreen = ({ navigation }) => {
 
         {/* Category Squares */}
         <View style={styles.categoriesGrid}>
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categorySquare,
-                selectedCategory === category.id && styles.categorySquareActive
-              ]}
-              onPress={() => setSelectedCategory(category.id)}
-            >
-              <View style={styles.categorySquareInner} />
-            </TouchableOpacity>
-          ))}
+          {categories.map((category) => {
+            const isActive = selectedCategory === category.id;
+            return (
+              <TouchableOpacity
+                key={category.id}
+                style={[styles.categorySquare, isActive ? styles.categorySquareActive : styles.categorySquareInactive]}
+                onPress={() => setSelectedCategory(category.id)}
+              >
+                <View style={styles.categorySquareInner}>
+                  <CategoryVectorIcon
+                    type={category.vector as any}
+                    size={26}
+                    color={isActive ? '#FFA500' : 'rgba(255,255,255,0.85)'}
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
         
         <View style={styles.categoryLabels}>
@@ -388,27 +550,75 @@ const HomeScreen = ({ navigation }) => {
         {/* Products and Stores Grid */}
         {selectedTab === 'Products' ? (
           <View style={styles.productsContainer}>
-            <FlatList
-              key={`products-${viewMode}`}
-              data={products.length > 0 ? products : Array(12).fill({})}
-              renderItem={renderProductCard}
-              keyExtractor={(item, index) => item._id || `item-${index}`}
-              numColumns={viewMode === 'grid' ? 2 : 1}
-              columnWrapperStyle={viewMode === 'grid' ? styles.columnWrapper : null}
-              scrollEnabled={false}
-              nestedScrollEnabled={false}
-            />
+            {loading && products.length === 0 ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={COLORS.secondary} />
+              </View>
+            ) : productsError && products.length === 0 ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center', paddingHorizontal: 20 }}>
+                <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16, marginBottom: 10, textAlign: 'center' }}>
+                  {productsError}
+                </Text>
+                <TouchableOpacity
+                  onPress={fetchLatestProducts}
+                  style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}
+                >
+                  <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : products.length === 0 ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center', paddingHorizontal: 20 }}>
+                <Text style={{ color: COLORS.secondary, marginBottom: 10 }}>No products found</Text>
+                <TouchableOpacity
+                  onPress={fetchLatestProducts}
+                  style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}
+                >
+                  <Text style={{ color: COLORS.white, fontWeight: '600' }}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                key={`products-${viewMode}`}
+                data={products}
+                renderItem={renderProductCard}
+                keyExtractor={(item, index) => item._id || `item-${index}`}
+                numColumns={viewMode === 'grid' ? 2 : 1}
+                columnWrapperStyle={viewMode === 'grid' ? styles.columnWrapper : null}
+                scrollEnabled={false}
+                nestedScrollEnabled={false}
+              />
+            )}
           </View>
         ) : (
           <View style={styles.productsContainer}>
-            <FlatList
-              key="stores-list"
-              data={stores}
-              renderItem={renderStoreCard}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              nestedScrollEnabled={false}
-            />
+            {storesLoading ? (
+              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={COLORS.secondary} />
+              </View>
+            ) : storesError ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.secondary, marginBottom: 10 }}>{storesError}</Text>
+                <TouchableOpacity onPress={fetchStores} style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}>
+                  <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : stores.length === 0 ? (
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.secondary, marginBottom: 10 }}>No stores found</Text>
+                <TouchableOpacity onPress={fetchStores} style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}>
+                  <Text style={{ color: COLORS.white, fontWeight: '600' }}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                key="stores-list"
+                data={stores}
+                renderItem={renderStoreCard}
+                keyExtractor={(item: any) => String(item.id)}
+                scrollEnabled={false}
+                nestedScrollEnabled={false}
+              />
+            )}
           </View>
         )}
       </ScrollView>
@@ -522,6 +732,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.secondary,
     overflow: 'hidden',
   },
+  categorySquareInactive: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
   categorySquareActive: {
     borderWidth: 2,
     borderColor: '#FFA500',
@@ -529,7 +743,8 @@ const styles = StyleSheet.create({
   categorySquareInner: {
     width: '100%',
     height: '100%',
-    backgroundColor: COLORS.secondary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   categoryLabels: {
     flexDirection: 'row',

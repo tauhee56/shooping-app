@@ -17,6 +17,15 @@ const COLORS = {
 const FavoritesScreen = ({ navigation }) => {
   const { favorites, removeFavorite } = useFavorites();
 
+  const productFavorites = favorites.filter((f) => typeof f?.price === 'number' && f.price > 0);
+
+  const getStoreName = (store: any): string => {
+    if (!store) return '';
+    if (typeof store === 'string') return store;
+    if (typeof store === 'object') return store?.name || '';
+    return '';
+  };
+
   const renderFavoriteItem = ({ item }) => (
     <TouchableOpacity
       style={styles.favoriteCard}
@@ -39,7 +48,7 @@ const FavoritesScreen = ({ navigation }) => {
       <View style={styles.productInfo}>
         <View style={styles.brandRow}>
           <View style={styles.brandIcon} />
-          <Text style={styles.brandName}>{item.store}</Text>
+          <Text style={styles.brandName}>{getStoreName((item as any).store) || 'Store'}</Text>
         </View>
         <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
         <View style={styles.priceRow}>
@@ -62,9 +71,9 @@ const FavoritesScreen = ({ navigation }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      {favorites.length > 0 ? (
+      {productFavorites.length > 0 ? (
         <FlatList
-          data={favorites}
+          data={productFavorites}
           renderItem={renderFavoriteItem}
           keyExtractor={(item) => item.id}
           numColumns={2}

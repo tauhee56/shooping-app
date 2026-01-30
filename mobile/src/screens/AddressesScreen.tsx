@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { addressAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -12,60 +14,73 @@ const COLORS = {
 };
 
 const AddressesScreen = ({ navigation }) => {
-  const [addresses, setAddresses] = useState([
-    {
-      id: '1',
-      type: 'Home',
-      name: 'John Doe',
-      phone: '+44 7700 900000',
-      address: '123 Oxford Street, Westminster',
-      city: 'London',
-      postcode: 'W1D 2HG',
-      country: 'United Kingdom',
-      isDefault: true,
-    },
-    {
-      id: '2',
-      type: 'Work',
-      name: 'John Doe',
-      phone: '+44 7700 900001',
-      address: '456 Kings Road, Chelsea',
-      city: 'London',
-      postcode: 'SW3 5UE',
-      country: 'United Kingdom',
-      isDefault: false,
-    },
-  ]);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSaveAddress = (updatedAddress, { isEditing } = { isEditing: false }) => {
-    setAddresses((prev) => {
-      let next = [];
-      if (isEditing) {
-        next = prev.map((addr) => (addr.id === updatedAddress.id ? { ...addr, ...updatedAddress } : addr));
-      } else {
-        next = [{ ...updatedAddress }, ...prev];
-      }
-
-      // If new/edited address marked default, unset others
-      if (updatedAddress.isDefault) {
-        next = next.map((addr) => ({ ...addr, isDefault: addr.id === updatedAddress.id }));
-      }
-
-      return next;
-    });
+  const mapAddress = (a: any) => {
+    return {
+      id: String(a?._id || a?.id || ''),
+      type: a?.type || 'Home',
+      name: a?.fullName || a?.name || '',
+      phone: a?.phone || '',
+      address: a?.street || a?.address || '',
+      city: a?.city || '',
+      postcode: a?.zip || a?.postcode || '',
+      country: a?.country || '',
+      isDefault: !!a?.isDefault,
+      raw: a,
+    };
   };
 
+  const loadAddresses = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await addressAPI.getMyAddresses();
+      const list = Array.isArray(res.data) ? res.data : [];
+      setAddresses(list.map(mapAddress).filter((x: any) => !!x.id));
+    } catch (e: any) {
+      setAddresses([]);
+      setError(getErrorMessage(e, 'Failed to load addresses'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAddresses();
+    const unsub = navigation.addListener('focus', () => {
+      loadAddresses();
+    });
+    return unsub;
+  }, [navigation]);
+
   const setDefaultAddress = (id) => {
-    setAddresses(
-      addresses.map((addr) => ({
-        ...addr,
-        isDefault: addr.id === id,
-      }))
-    );
+    const prev = addresses;
+    setAddresses((xs) => xs.map((addr) => ({ ...addr, isDefault: addr.id === id })));
+    (async () => {
+      try {
+        await addressAPI.setDefault(String(id));
+      } catch (e: any) {
+        setAddresses(prev);
+        setError(getErrorMessage(e, 'Failed to set default address'));
+      }
+    })();
   };
 
   const deleteAddress = (id) => {
+    const prev = addresses;
     setAddresses(addresses.filter((addr) => addr.id !== id));
+    (async () => {
+      try {
+        await addressAPI.deleteAddress(String(id));
+        await loadAddresses();
+      } catch (e: any) {
+        setAddresses(prev);
+        setError(getErrorMessage(e, 'Failed to delete address'));
+      }
+    })();
   };
 
   const renderAddress = ({ item }) => (
@@ -107,7 +122,7 @@ const AddressesScreen = ({ navigation }) => {
         )}
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => navigation.navigate('AddAddress', { addressId: item.id, address: item, onSave: handleSaveAddress })}
+          onPress={() => navigation.navigate('AddAddress', { addressId: item.id, address: item.raw || item })}
         >
           <MaterialIcons name="edit" size={18} color={COLORS.secondary} />
           <Text style={[styles.actionText, { color: COLORS.secondary }]}>Edit</Text>
@@ -133,17 +148,33 @@ const AddressesScreen = ({ navigation }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <FlatList
-        data={addresses}
-        renderItem={renderAddress}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.addressesList}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading && addresses.length === 0 ? (
+        <View style={styles.stateContainer}>
+          <ActivityIndicator />
+          <Text style={styles.stateText}>Loading...</Text>
+        </View>
+      ) : error && addresses.length === 0 ? (
+        <View style={styles.stateContainer}>
+          <MaterialIcons name="error-outline" size={56} color={COLORS.gray} />
+          <Text style={styles.stateTitle}>Unable to load addresses</Text>
+          <Text style={styles.stateText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadAddresses}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={addresses}
+          renderItem={renderAddress}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.addressesList}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
       <TouchableOpacity
         style={styles.addButton}
-        onPress={() => navigation.navigate('AddAddress', { onSave: handleSaveAddress })}
+        onPress={() => navigation.navigate('AddAddress')}
       >
         <MaterialIcons name="add" size={24} color={COLORS.white} />
         <Text style={styles.addButtonText}>Add New Address</Text>
@@ -156,6 +187,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.light,
+  },
+  stateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  stateTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    textAlign: 'center',
+  },
+  stateText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: COLORS.gray,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+  },
+  retryText: {
+    color: COLORS.white,
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',

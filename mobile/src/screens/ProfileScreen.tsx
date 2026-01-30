@@ -1,9 +1,11 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, Dimensions, FlatList, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AuthContext } from '../context/AuthContext';
 import { useFavorites } from '../context/FavoritesContext';
+import { authAPI, storeAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -16,38 +18,233 @@ const COLORS = {
 };
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, logout } = useContext(AuthContext);
+  const { user, logout, updateProfile, refreshProfile } = useContext(AuthContext);
   const [isSeller, setIsSeller] = useState(user?.isStore || false);
+
+  const [myStores, setMyStores] = useState<any[]>([]);
 
   const handleLogout = async () => {
     await logout();
   };
 
-  // Seller's stores data
-  const stores = [
-    { id: '1', name: 'Store 1', image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af' },
-    { id: '2', name: 'Store 2', image: 'https://images.unsplash.com/photo-1588534928657-af8c095da0dd' },
-    { id: '3', name: 'Store 3', image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883' },
-    { id: '4', name: 'Store 4', image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108' },
-    { id: '5', name: 'Store 5', image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371' },
-    { id: '6', name: 'Store 6', image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af' },
-  ];
+  useEffect(() => {
+    setIsSeller(user?.isStore || false);
+  }, [user?.isStore]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMyStore = async () => {
+      if (!user?.isStore) {
+        if (!cancelled) setMyStores([]);
+        return;
+      }
+
+      try {
+        let stores: any[] = [];
+        try {
+          const res = await storeAPI.getMyStores();
+          stores = Array.isArray(res?.data) ? res.data : [];
+        } catch {
+          const res = await storeAPI.getMyStore();
+          const s = res?.data;
+          stores = s ? [s] : [];
+        }
+
+        const mapped = stores
+          .map((s: any) => {
+            const id = String(s?._id || s?.id || '');
+            const image = s?.logo || s?.banner || '';
+            return {
+              id,
+              name: s?.name || 'Store',
+              image,
+              products: s?.products,
+            };
+          })
+          .filter((x: any) => !!x.id);
+
+        if (!cancelled) setMyStores(mapped);
+      } catch {
+        if (!cancelled) setMyStores([]);
+      }
+    };
+
+    loadMyStore();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.isStore]);
+
+  const followersCount = Array.isArray(user?.followers) ? user.followers.length : 0;
+  const followingCount = Array.isArray(user?.following) ? user.following.length : 0;
+
+  const handleAvatarPress = () => {
+    const hasImage = !!user && typeof (user as any)?.profileImage === 'string' && String((user as any).profileImage).trim().length > 0;
+    const actions: any[] = [
+      {
+        text: 'Change Photo',
+        onPress: () => pickAndUploadAvatar(),
+      },
+    ];
+    if (hasImage) {
+      actions.push({
+        text: 'Remove Photo',
+        style: 'destructive',
+        onPress: async () => {
+          const res = await updateProfile({ profileImage: '' });
+          if (!res.success) {
+            Alert.alert('Error', res.error || 'Failed to update profile');
+            return;
+          }
+          try {
+            await refreshProfile();
+          } catch {
+            // ignore
+          }
+        },
+      });
+    }
+    actions.push({ text: 'Cancel', style: 'cancel', onPress: () => {} });
+
+    Alert.alert('Profile Photo', 'Choose an option', actions);
+  };
+
+  const pickAndUploadAvatar = async () => {
+    let ImagePicker: any;
+    try {
+      ImagePicker = require('expo-image-picker');
+    } catch {
+      Alert.alert('Missing dependency', 'Please install expo-image-picker to enable photo upload.');
+      return;
+    }
+
+    try {
+      const existingPerm =
+        typeof ImagePicker.getMediaLibraryPermissionsAsync === 'function'
+          ? await ImagePicker.getMediaLibraryPermissionsAsync()
+          : null;
+      const hadPermission = Boolean(existingPerm?.granted);
+
+      const perm = hadPermission ? existingPerm : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm?.granted) {
+        Alert.alert('Permission required', 'Please allow photo library access to change your profile photo.');
+        return;
+      }
+
+      if (!hadPermission && (existingPerm?.status === 'undetermined' || existingPerm?.status === undefined)) {
+        Alert.alert('Permission granted', 'Now tap again to pick a photo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes:
+          (ImagePicker as any).MediaType?.Images ??
+          (ImagePicker as any).MediaTypeOptions?.Images ??
+          (ImagePicker as any).MediaType?.IMAGE,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result?.canceled) return;
+      const asset = Array.isArray(result?.assets) ? result.assets[0] : null;
+      const uri = asset?.uri;
+      if (!uri) return;
+
+      const formData = new FormData();
+      formData.append('image', {
+        uri,
+        name: 'profile.jpg',
+        type: asset?.mimeType || 'image/jpeg',
+      } as any);
+
+      const uploadRes = await authAPI.uploadProfileImage(formData);
+      const url = String(uploadRes?.data?.url || '').trim();
+      if (!url) {
+        Alert.alert('Error', 'Upload failed');
+        return;
+      }
+
+      const res = await updateProfile({ profileImage: url });
+      if (!res.success) {
+        Alert.alert('Error', res.error || 'Failed to update profile');
+        return;
+      }
+
+      try {
+        await refreshProfile();
+      } catch {
+        // ignore
+      }
+    } catch (e: any) {
+      Alert.alert('Error', getErrorMessage(e, 'Failed to update profile photo'));
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {isSeller ? <SellerProfileView stores={stores} navigation={navigation} /> : <BuyerProfileView navigation={navigation} />}
+      {isSeller ? (
+        <SellerProfileView
+          stores={myStores}
+          navigation={navigation}
+          profile={user}
+          followersCount={followersCount}
+          followingCount={followingCount}
+          onAvatarPress={handleAvatarPress}
+        />
+      ) : (
+        <BuyerProfileView
+          navigation={navigation}
+          profile={user}
+          followersCount={followersCount}
+          followingCount={followingCount}
+          onAvatarPress={handleAvatarPress}
+        />
+      )}
     </SafeAreaView>
   );
 };
 
+const getInitials = (name: string) => {
+  const cleaned = String(name || '').trim();
+  if (!cleaned) return '';
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const second = parts.length > 1 ? parts[1]?.[0] || '' : parts[0]?.[1] || '';
+  return (first + second).toUpperCase();
+};
+
+const InitialsAvatar = ({ name }: { name: string }) => {
+  const initials = getInitials(name);
+  return (
+    <View style={[styles.profileAvatar, styles.initialsAvatar]}>
+      <Text style={styles.initialsText}>{initials}</Text>
+    </View>
+  );
+};
+
 // BUYER PROFILE VIEW (Not a seller yet)
-const BuyerProfileView = ({ navigation }) => {
+const BuyerProfileView = ({ navigation, profile, followersCount, followingCount, onAvatarPress }) => {
   const [activeTab, setActiveTab] = useState('grid');
   const { favorites } = useFavorites();
   
   // Split favorites into products and stores (simple logic for demo)
   const likedProducts = favorites.filter(item => item.price > 0);
   const likedStores = favorites.filter(item => !item.price || item.price === 0);
+
+  const displayName = String(profile?.name || '').trim();
+  const bio = String(profile?.bio || '').trim();
+  const websiteLine = String(profile?.email || '').trim();
+
+  const stats = useMemo(() => {
+    return {
+      stores: likedStores.length,
+      posts: likedProducts.length,
+      subscribers: followersCount || 0,
+      subscription: followingCount || 0,
+    };
+  }, [followersCount, followingCount, likedProducts.length, likedStores.length]);
 
   const handleSellProduct = () => {
     Alert.alert(
@@ -87,25 +284,30 @@ const BuyerProfileView = ({ navigation }) => {
 
       {/* Profile Avatar and Stats */}
       <View style={styles.profileSection}>
-        <Image
-          source={{ uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330' }}
-          style={styles.profileAvatar}
-        />
+        <TouchableOpacity activeOpacity={0.8} onPress={onAvatarPress}>
+          {profile?.profileImage ? (
+            <Image source={{ uri: String(profile.profileImage) }} style={styles.profileAvatar} />
+          ) : displayName ? (
+            <InitialsAvatar name={displayName} />
+          ) : (
+            <View style={styles.profileAvatar} />
+          )}
+        </TouchableOpacity>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>8</Text>
+            <Text style={styles.statNumber}>{stats.stores}</Text>
             <Text style={styles.statLabel}>Stores</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>83</Text>
+            <Text style={styles.statNumber}>{stats.posts}</Text>
             <Text style={styles.statLabel}>Posts</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>320</Text>
+            <Text style={styles.statNumber}>{stats.subscribers}</Text>
             <Text style={styles.statLabel}>Subscribers</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>120</Text>
+            <Text style={styles.statNumber}>{stats.subscription}</Text>
             <Text style={styles.statLabel}>Subscription</Text>
           </View>
         </View>
@@ -113,9 +315,9 @@ const BuyerProfileView = ({ navigation }) => {
 
       {/* User Bio */}
       <View style={styles.bioSection}>
-        <Text style={styles.bioName}>Lumina</Text>
-        <Text style={styles.bioTagline}>Here are my latest travel pictures!</Text>
-        <Text style={styles.bioWebsite}>www.yoursite.com</Text>
+        <Text style={styles.bioName}>{displayName}</Text>
+        <Text style={styles.bioTagline}>{bio}</Text>
+        <Text style={styles.bioWebsite}>{websiteLine}</Text>
       </View>
 
       {/* Action Buttons */}
@@ -142,19 +344,19 @@ const BuyerProfileView = ({ navigation }) => {
 
       {/* Grid Tab - Create Store CTA */}
       {activeTab === 'grid' ? (
-        <>
+        <View>
           <TouchableOpacity style={styles.createStoreButton} onPress={() => navigation.navigate('CreateStore')}>
             <MaterialIcons name="add" size={20} color={COLORS.white} />
             <Text style={styles.createStoreText}>Create your first store</Text>
           </TouchableOpacity>
           <View style={{ height: 200 }} />
-        </>
+        </View>
       ) : (
         // Favorites Tab - Liked Products and Stores
-        <>
+        <View>
           {/* Liked Products */}
           {likedProducts.length > 0 && (
-            <>
+            <View>
               <Text style={styles.sectionTitle}>Liked Products</Text>
               <FlatList
                 data={likedProducts}
@@ -177,12 +379,12 @@ const BuyerProfileView = ({ navigation }) => {
                   </TouchableOpacity>
                 )}
               />
-            </>
+            </View>
           )}
 
           {/* Liked Stores */}
           {likedStores.length > 0 && (
-            <>
+            <View>
               <Text style={styles.sectionTitle}>Liked Stores</Text>
               <FlatList
                 data={likedStores}
@@ -201,17 +403,46 @@ const BuyerProfileView = ({ navigation }) => {
                   </TouchableOpacity>
                 )}
               />
-            </>
+            </View>
           )}
           <View style={{ height: 30 }} />
-        </>
+        </View>
       )}
     </ScrollView>
   );
 };
 
 // SELLER PROFILE VIEW (As a seller)
-const SellerProfileView = ({ stores, navigation }) => {
+const SellerProfileView = ({ stores, navigation, profile, followersCount, followingCount, onAvatarPress }) => {
+  const displayName = String(profile?.name || '').trim();
+  const bio = String(profile?.bio || '').trim();
+  const websiteLine = String(profile?.email || '').trim();
+
+  const handleAddProduct = () => {
+    const firstStore = Array.isArray(stores) && stores.length > 0 ? stores[0] : null;
+    const storeId = String(firstStore?.id || '');
+    if (!storeId) {
+      Alert.alert('Store not found', 'Please create a store first.');
+      return;
+    }
+    navigation.navigate('AddProduct', { storeId });
+  };
+
+  const postsCount = useMemo(() => {
+    const firstStore = Array.isArray(stores) && stores.length > 0 ? stores[0] : null;
+    const products = firstStore?.products;
+    return Array.isArray(products) ? products.length : 0;
+  }, [stores]);
+
+  const stats = useMemo(() => {
+    return {
+      stores: Array.isArray(stores) ? stores.length : 0,
+      posts: postsCount,
+      subscribers: followersCount || 0,
+      subscription: followingCount || 0,
+    };
+  }, [followersCount, followingCount, postsCount, stores]);
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
       {/* Header with Back and Notification */}
@@ -231,25 +462,30 @@ const SellerProfileView = ({ stores, navigation }) => {
 
       {/* Profile Avatar and Stats */}
       <View style={styles.profileSection}>
-        <Image
-          source={{ uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330' }}
-          style={styles.profileAvatar}
-        />
+        <TouchableOpacity activeOpacity={0.8} onPress={onAvatarPress}>
+          {profile?.profileImage ? (
+            <Image source={{ uri: String(profile.profileImage) }} style={styles.profileAvatar} />
+          ) : displayName ? (
+            <InitialsAvatar name={displayName} />
+          ) : (
+            <View style={styles.profileAvatar} />
+          )}
+        </TouchableOpacity>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>8</Text>
+            <Text style={styles.statNumber}>{stats.stores}</Text>
             <Text style={styles.statLabel}>Stores</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>83</Text>
+            <Text style={styles.statNumber}>{stats.posts}</Text>
             <Text style={styles.statLabel}>Posts</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>320</Text>
+            <Text style={styles.statNumber}>{stats.subscribers}</Text>
             <Text style={styles.statLabel}>Subscribers</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>120</Text>
+            <Text style={styles.statNumber}>{stats.subscription}</Text>
             <Text style={styles.statLabel}>Subscription</Text>
           </View>
         </View>
@@ -257,14 +493,14 @@ const SellerProfileView = ({ stores, navigation }) => {
 
       {/* User Bio */}
       <View style={styles.bioSection}>
-        <Text style={styles.bioName}>Lumina</Text>
-        <Text style={styles.bioTagline}>Here are my latest travel pictures!</Text>
-        <Text style={styles.bioWebsite}>www.yoursite.com</Text>
+        <Text style={styles.bioName}>{displayName}</Text>
+        <Text style={styles.bioTagline}>{bio}</Text>
+        <Text style={styles.bioWebsite}>{websiteLine}</Text>
       </View>
 
       {/* Action Buttons */}
       <View style={styles.actionButtonsRow}>
-        <TouchableOpacity style={styles.darkButton} onPress={() => navigation.navigate('AddProduct')}>
+        <TouchableOpacity style={styles.darkButton} onPress={handleAddProduct}>
           <MaterialIcons name="add" size={20} color={COLORS.white} />
           <Text style={styles.darkButtonText}>Sell product</Text>
         </TouchableOpacity>
@@ -332,6 +568,15 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     marginBottom: 15,
     backgroundColor: COLORS.light,
+  },
+  initialsAvatar: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.secondary,
   },
   statsRow: {
     flexDirection: 'row',

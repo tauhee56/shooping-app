@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions, TextInput } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFavorites } from '../context/FavoritesContext';
+import { AuthContext } from '../context/AuthContext';
+import { productAPI, storeAPI } from '../utils/api';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -18,10 +21,44 @@ const StoreProductsScreen = ({ route, navigation }) => {
   const { storeId, storeName } = route.params;
   const [searchText, setSearchText] = useState('');
   const [isFollowing, setIsFollowing] = useState(false);
+  const [store, setStore] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { toggleFavorite, isFavorite } = useFavorites();
+  const { user } = useContext(AuthContext);
 
-  const handleFollowToggle = () => {
-    setIsFollowing(!isFollowing);
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  const userId = (user as any)?._id || (user as any)?.id;
+
+  const getStoreName = (store: any): string => {
+    if (!store) return '';
+    if (typeof store === 'string') return store;
+    if (typeof store === 'object') return store?.name || '';
+    return '';
+  };
+
+  const handleFollowToggle = async () => {
+    const prev = isFollowing;
+    try {
+      setIsFollowing(!prev);
+      const res = await storeAPI.followStore(storeId);
+      const apiFollowing = typeof res?.data?.isFollowing === 'boolean' ? res.data.isFollowing : null;
+      if (apiFollowing !== null) {
+        setIsFollowing(apiFollowing);
+      }
+    } catch (e: any) {
+      // revert optimistic
+      setIsFollowing(prev);
+      Alert.alert(getErrorTitle(e, 'Failed to follow store'), getErrorMessage(e, 'Failed to follow store'));
+    }
+  };
+
+  const isUserFollowingStore = (s: any, uid: any) => {
+    if (!uid) return false;
+    const followers = Array.isArray(s?.followers) ? s.followers : [];
+    return followers.map((f: any) => String(f?._id || f)).includes(String(uid));
   };
 
   const handleCategoryPress = (category) => {
@@ -29,119 +66,68 @@ const StoreProductsScreen = ({ route, navigation }) => {
     console.log('Category pressed:', category.name);
   };
 
-  // Store info
-  const store = {
-    id: storeId,
-    name: storeName,
-    coverImage: 'https://images.unsplash.com/photo-1607748862156-7c548e7e98f4',
-    image: 'https://images.unsplash.com/photo-1600948836101-f9ffda59d250',
-    description: 'We sell perfumed soap made by hand in our London lab.',
-    rating: 5,
-    reviews: 23,
-    followers: 3450,
-    products: 32,
-    location: 'Green town, London',
-    deliveryAvailable: true,
-  };
+  useEffect(() => {
+    let cancelled = false;
 
-  const categories = [
-    {
-      id: '1',
-      name: 'Skin care & creams',
-      count: 34,
-      color: '#FFE5E5',
-      image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883',
-    },
-    {
-      id: '2',
-      name: 'Soaps',
-      count: 11,
-      color: '#E5F5FF',
-      image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108',
-    },
-    {
-      id: '3',
-      name: 'Baby creams and specialty soaps',
-      count: 17,
-      color: '#F0E5FF',
-      image: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883',
-    },
-    {
-      id: '4',
-      name: 'Perfumes',
-      count: 9,
-      color: '#E5FFE5',
-      image: 'https://images.unsplash.com/photo-1506755855726-4a1c51e8a722',
-    },
-  ];
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [storeRes, productsRes] = await Promise.all([
+          storeAPI.getStoreById(storeId),
+          productAPI.getProductsByStore(storeId),
+        ]);
 
-  // Mock store products data
-  const storeProducts = [
-    {
-      id: '1',
-      _id: '1',
-      name: 'Premium Olive Oil Body',
-      price: 32,
-      rating: 9,
-      reviews: 32,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1604654894610-df63bc536371'],
-    },
-    {
-      id: '2',
-      _id: '2',
-      name: 'Luxury Soap Bar',
-      price: 25,
-      rating: 8,
-      reviews: 18,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1608571423902-eed4a5ad8108'],
-    },
-    {
-      id: '3',
-      _id: '3',
-      name: 'Skin Care Cream',
-      price: 45,
-      rating: 9,
-      reviews: 42,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1556228578-8c89e6adf883'],
-    },
-    {
-      id: '4',
-      _id: '4',
-      name: 'Body Wash',
-      price: 28,
-      rating: 8,
-      reviews: 25,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1556228578-8c89e6adf883'],
-    },
-    {
-      id: '5',
-      _id: '5',
-      name: 'Face Mask',
-      price: 35,
-      rating: 9,
-      reviews: 50,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1556228578-8c89e6adf883'],
-    },
-    {
-      id: '6',
-      _id: '6',
-      name: 'Perfume',
-      price: 55,
-      rating: 10,
-      reviews: 38,
-      store: storeName,
-      images: ['https://images.unsplash.com/photo-1506755855726-4a1c51e8a722'],
-    },
-  ];
+        if (cancelled) return;
 
-  const filteredProducts = storeProducts.filter(p =>
-    p.name.toLowerCase().includes(searchText.toLowerCase())
-  );
+        setStore(storeRes.data);
+        setIsFollowing(isUserFollowingStore(storeRes.data, userId));
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : []);
+      } catch (e: any) {
+        if (cancelled) return;
+        setStore(null);
+        setProducts([]);
+        setError(getErrorMessage(e, 'Failed to load store products'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId]);
+
+  const derivedCategories = useMemo(() => {
+    const map = new Map<string, { name: string; count: number; image?: string }>();
+    for (const p of products || []) {
+      const cat = (p?.category || '').trim();
+      if (!cat) continue;
+      const existing = map.get(cat);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      const img = Array.isArray(p?.images) && p.images.length > 0 ? p.images[0] : undefined;
+      map.set(cat, { name: cat, count: 1, image: img });
+    }
+
+    const colors = ['#FFE5E5', '#E5F5FF', '#F0E5FF', '#E5FFE5', '#FFF4E5'];
+    return Array.from(map.values()).map((c, idx) => ({
+      id: String(idx + 1),
+      name: c.name,
+      count: c.count,
+      color: colors[idx % colors.length],
+      image: c.image || '',
+    }));
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!q) return products;
+    return (products || []).filter((p: any) => String(p?.name || '').toLowerCase().includes(q));
+  }, [products, searchText]);
 
   const renderProductCard = ({ item }) => (
     <TouchableOpacity
@@ -149,10 +135,14 @@ const StoreProductsScreen = ({ route, navigation }) => {
       onPress={() => navigation.navigate('ProductDetail', { productId: item._id })}
     >
       <View style={{position: 'relative', marginBottom: 12}}>
-        <Image
-          source={{ uri: item.images?.[0] || 'https://images.unsplash.com/photo-1505022610485-0249ba5b3675' }}
-          style={styles.productImage}
-        />
+        {isValidImageUri(item?.images?.[0]) ? (
+          <Image
+            source={{ uri: item.images[0] }}
+            style={styles.productImage}
+          />
+        ) : (
+          <View style={styles.productImage} />
+        )}
         {/* Carousel Dots */}
         <View style={styles.carouselDots}>
           <View style={[styles.dot, styles.dotActive]} />
@@ -168,7 +158,16 @@ const StoreProductsScreen = ({ route, navigation }) => {
         {/* Wishlist Button */}
         <TouchableOpacity 
           style={styles.productLikeButton}
-          onPress={() => toggleFavorite(item)}
+          onPress={() =>
+            toggleFavorite({
+              id: item._id,
+              name: item.name,
+              store: getStoreName(item.store) || storeName || 'Store',
+              price: item.price,
+              rating: item.rating,
+              image: (Array.isArray(item?.images) && item.images.length > 0 ? item.images[0] : '') || item?.image || '',
+            })
+          }
         >
           <MaterialIcons name={isFavorite(item._id) ? "favorite" : "favorite-border"} size={22} color="#FF1493" />
         </TouchableOpacity>
@@ -177,12 +176,14 @@ const StoreProductsScreen = ({ route, navigation }) => {
       <View style={styles.productInfo}>
         <View style={styles.productBrand}>
           <View style={styles.brandIcon} />
-          <Text style={styles.brandName}>{item.store}</Text>
+          <Text style={styles.brandName}>{getStoreName(item.store) || storeName || 'Store'}</Text>
         </View>
         <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
         <View style={styles.productFooter}>
           <Text style={styles.price}>£{item.price}</Text>
-          <Text style={styles.ratingInfo}>{item.rating}/10 ({item.reviews})</Text>
+          <Text style={styles.ratingInfo}>
+            {item.rating}/10 ({Array.isArray(item.reviews) ? item.reviews.length : item.reviews || 0})
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -193,31 +194,72 @@ const StoreProductsScreen = ({ route, navigation }) => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Cover Image */}
         <View style={styles.coverContainer}>
-          <Image source={{ uri: store.coverImage }} style={styles.coverImage} />
+          {isValidImageUri(store?.banner) ? (
+            <Image
+              source={{ uri: store.banner }}
+              style={styles.coverImage}
+            />
+          ) : (
+            <View style={styles.coverImage} />
+          )}
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color={COLORS.white} />
           </TouchableOpacity>
         </View>
 
-        {/* Store Info Container */}
-        <View style={styles.infoContainer}>
+        {loading ? (
+          <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={COLORS.secondary} />
+          </View>
+        ) : error ? (
+          <View style={{ paddingVertical: 20, alignItems: 'center', paddingHorizontal: 20 }}>
+            <Text style={{ color: COLORS.secondary, marginBottom: 10, textAlign: 'center' }}>{error}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setError(null);
+                setLoading(true);
+                Promise.all([storeAPI.getStoreById(storeId), productAPI.getProductsByStore(storeId)])
+                  .then(([s, p]) => {
+                    setStore(s.data);
+                    setProducts(Array.isArray(p.data) ? p.data : []);
+                  })
+                  .catch((e) => setError(getErrorMessage(e, 'Failed to load store products')))
+                  .finally(() => setLoading(false));
+              }}
+              style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}
+            >
+              <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View>
+
+          {/* Store Info Container */}
+          <View style={styles.infoContainer}>
           {/* Logo */}
-          <Image source={{ uri: store.image }} style={styles.storeAvatar} />
+          {isValidImageUri(store?.logo) ? (
+            <Image
+              source={{ uri: store.logo }}
+              style={styles.storeAvatar}
+            />
+          ) : (
+            <View style={styles.storeAvatar} />
+          )}
           
           {/* Store Name and Location */}
-          <Text style={styles.storeName}>{store.name}</Text>
+          <Text style={styles.storeName}>{store?.name || storeName || 'Store'}</Text>
           <View style={styles.ratingRow}>
             <MaterialIcons name="place" size={16} color={COLORS.gray} />
-            <Text style={styles.location}>{store.location}</Text>
+            <Text style={styles.location}>{store?.location || ''}</Text>
           </View>
 
           {/* Description */}
-          <Text style={styles.description}>{store.description}</Text>
+          <Text style={styles.description}>{store?.description || ''}</Text>
 
           {/* Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{store.products}</Text>
+              <Text style={styles.statNumber}>{Array.isArray(products) ? products.length : 0}</Text>
               <Text style={styles.statLabel}>Products</Text>
             </View>
             <View style={styles.statDivider} />
@@ -236,11 +278,11 @@ const StoreProductsScreen = ({ route, navigation }) => {
               {isFollowing ? 'Following' : 'Follow'}
             </Text>
           </TouchableOpacity>
-        </View>
+          </View>
 
-        {/* Categories Grid */}
-        <View style={styles.categoriesSection}>
-          {categories.map((category, index) => (
+          {/* Categories Grid */}
+          <View style={styles.categoriesSection}>
+          {derivedCategories.map((category, index) => (
             <TouchableOpacity
               key={category.id}
               style={[
@@ -249,29 +291,40 @@ const StoreProductsScreen = ({ route, navigation }) => {
               ]}
               onPress={() => handleCategoryPress(category)}
             >
-              <Image source={{ uri: category.image }} style={styles.categoryImage} />
+              {isValidImageUri(category.image) ? (
+                <Image source={{ uri: category.image }} style={styles.categoryImage} />
+              ) : (
+                <View style={styles.categoryImage} />
+              )}
               <View style={styles.categoryInfo}>
                 <Text style={styles.categoryName}>{category.name}</Text>
                 <Text style={styles.categoryCount}>{category.count} Products</Text>
               </View>
             </TouchableOpacity>
           ))}
-        </View>
+          </View>
 
-        {/* Products Section Header */}
-        <View style={styles.productsHeader}>
+          {/* Products Section Header */}
+          <View style={styles.productsHeader}>
           <Text style={styles.productsTitle}>All Products</Text>
-        </View>
+          </View>
 
-      {/* Products List */}
-      <FlatList
-        data={filteredProducts}
-        renderItem={renderProductCard}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.productsListContainer}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
-      />
+          {/* Products List */}
+          <FlatList
+            data={filteredProducts}
+            renderItem={renderProductCard}
+            keyExtractor={(item: any) => String(item?._id || item?.id || '')}
+            contentContainerStyle={styles.productsListContainer}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={false}
+            ListEmptyComponent={
+              <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.gray }}>No products found</Text>
+              </View>
+            }
+          />
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

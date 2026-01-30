@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { messageAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
+import { connectSocket } from '../utils/socket';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -18,29 +20,111 @@ const InboxScreen = ({ navigation }) => {
   const [selectedTab, setSelectedTab] = useState('All');
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadConversations();
-    const interval = globalThis.setInterval(loadConversations, 10000); // Refresh every 10s
-    return () => globalThis.clearInterval(interval);
-  }, []);
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
 
-  const loadConversations = async () => {
+  const inFlightRef = useRef(false);
+  const lastFetchAtRef = useRef(0);
+
+  const filteredConversations = useMemo(() => {
+    const list = Array.isArray(conversations) ? conversations : [];
+    if (selectedTab === 'Unread') {
+      return list.filter((c: any) => (c?.unreadCount || 0) > 0);
+    }
+    if (selectedTab === 'Stores') {
+      return list.filter((c: any) => !!(c?.store && (c.store._id || c.store.id)));
+    }
+    return list;
+  }, [conversations, selectedTab]);
+
+  const loadConversations = async (opts?: { force?: boolean }) => {
+    if (inFlightRef.current) return;
+
+    const now = Date.now();
+    if (!opts?.force && now - lastFetchAtRef.current < 700) return;
+
+    inFlightRef.current = true;
+    lastFetchAtRef.current = now;
     try {
+      setError(null);
       const response = await messageAPI.getConversations();
       setConversations(response.data);
     } catch (error) {
-      console.log('Error loading conversations:', error);
+      setConversations([]);
+      setError(getErrorMessage(error, 'Failed to load conversations'));
     } finally {
       setLoading(false);
+      inFlightRef.current = false;
     }
   };
 
-  const renderMessage = ({ item }) => {
-    const time = new Date(item.lastMessageTime).toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit' 
+  useEffect(() => {
+    loadConversations({ force: true });
+    const interval = globalThis.setInterval(() => loadConversations(), 10000); // Refresh every 10s
+    return () => globalThis.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadConversations();
     });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  useEffect(() => {
+    let active = true;
+    let socket: any;
+
+    const handleConversationUpdate = (payload: any) => {
+      const conv = payload?.conversation;
+      const partnerId = conv?.user?._id || conv?.user?.id;
+      if (!partnerId) return;
+
+      setConversations((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const idx = list.findIndex((c: any) => String(c?.user?._id || c?.user?.id) === String(partnerId));
+        const nextItem = {
+          ...(idx >= 0 ? list[idx] : {}),
+          ...conv,
+        };
+        const filtered = idx >= 0 ? list.filter((_: any, i: number) => i !== idx) : list;
+        return [nextItem, ...filtered];
+      });
+    };
+
+    const setup = async () => {
+      try {
+        socket = await connectSocket();
+        if (!active || !socket) return;
+        socket.on('conversation:update', handleConversationUpdate);
+      } catch {
+      }
+    };
+
+    setup();
+
+    return () => {
+      active = false;
+      if (socket) {
+        socket.off('conversation:update', handleConversationUpdate);
+      }
+    };
+  }, []);
+
+  const renderMessage = ({ item }) => {
+    const time = (() => {
+      try {
+        if (!item?.lastMessageTime) return '';
+        return new Date(item.lastMessageTime).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+      } catch {
+        return '';
+      }
+    })();
     
     return (
       <TouchableOpacity 
@@ -48,15 +132,19 @@ const InboxScreen = ({ navigation }) => {
         onPress={() => navigation.navigate('ChatDetail', {
           userId: item.user._id,
           userName: item.user.name,
-          userImage: item.user.profileImage || 'https://via.placeholder.com/100',
+          userImage: item.user.profileImage || '',
           storeId: item.store?._id,
         })}
       >
         <View style={styles.messageLeft}>
-          <Image 
-            source={{ uri: item.user.profileImage || 'https://via.placeholder.com/100' }} 
-            style={styles.storeAvatar} 
-          />
+          {isValidImageUri(item?.user?.profileImage) ? (
+            <Image 
+              source={{ uri: item.user.profileImage }} 
+              style={styles.storeAvatar} 
+            />
+          ) : (
+            <View style={styles.storeAvatar} />
+          )}
           {item.unreadCount > 0 && <View style={styles.onlineDot} />}
         </View>
         
@@ -88,6 +176,27 @@ const InboxScreen = ({ navigation }) => {
     );
   }
 
+  if (error && conversations.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 }]}>
+          <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16, marginBottom: 10, textAlign: 'center' }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setLoading(true);
+              loadConversations({ force: true });
+            }}
+            style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10 }}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -113,7 +222,7 @@ const InboxScreen = ({ navigation }) => {
 
       {/* Messages List */}
       <FlatList
-        data={conversations}
+        data={filteredConversations}
         renderItem={renderMessage}
         keyExtractor={(item, index) => index.toString()}
         contentContainerStyle={styles.messagesList}

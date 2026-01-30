@@ -1,7 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { orderAPI } from '../utils/api';
+import { getErrorMessage } from '../utils/errorMapper';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -11,23 +13,211 @@ const COLORS = {
   gray: '#999999',
 };
 
-const OrderDetailScreen = ({ navigation, route }) => {
-  const order = route.params?.order || {
-    orderNumber: 'ORD-2024-001',
-    date: 'Dec 26, 2024',
-    status: 'Delivered',
-    statusColor: '#4CAF50',
-    total: 87.97,
-    items: [],
+const OrderDetailScreen = ({ navigation, route }: any) => {
+  const orderId = route?.params?.orderId || route?.params?.order?._id || route?.params?.order?.id;
+  const initialOrder = route?.params?.order;
+
+  const [order, setOrder] = useState<any | null>(initialOrder || null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  const getStoreName = (store: any): string => {
+    if (!store) return '';
+    if (typeof store === 'string') return store;
+    if (typeof store === 'object') return store?.name || '';
+    return '';
   };
 
-  const timeline = [
-    { status: 'Order Placed', date: 'Dec 26, 10:30 AM', completed: true },
-    { status: 'Processing', date: 'Dec 26, 2:45 PM', completed: true },
-    { status: 'Shipped', date: 'Dec 27, 9:00 AM', completed: true },
-    { status: 'Out for Delivery', date: 'Dec 28, 8:15 AM', completed: order.status === 'Delivered' },
-    { status: 'Delivered', date: order.status === 'Delivered' ? 'Dec 28, 2:30 PM' : 'Pending', completed: order.status === 'Delivered' },
-  ];
+  const formatDate = (input?: any) => {
+    const d = input ? new Date(input) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+  };
+
+  const toOrderNumber = (o: any) => {
+    const id = String(o?._id || o?.id || '');
+    const suffix = id ? id.slice(-4).toUpperCase() : '0000';
+    const d = o?.createdAt ? new Date(o.createdAt) : null;
+    const year = d && !Number.isNaN(d.getTime()) ? d.getFullYear() : new Date().getFullYear();
+    return `ORD-${year}-${suffix}`;
+  };
+
+  const mapStatus = (statusRaw?: string) => {
+    const status = (statusRaw || '').toLowerCase();
+    switch (status) {
+      case 'delivered':
+        return { label: 'Delivered', color: '#4CAF50' };
+      case 'shipped':
+        return { label: 'In Transit', color: '#FF9800' };
+      case 'confirmed':
+      case 'pending':
+        return { label: 'Processing', color: '#2196F3' };
+      case 'cancelled':
+        return { label: 'Cancelled', color: '#F44336' };
+      default:
+        return { label: 'Processing', color: '#2196F3' };
+    }
+  };
+
+  const mappedOrder = useMemo(() => {
+    if (!order) return null;
+
+    const statusInfo = mapStatus(order?.status || order?.rawStatus);
+    const items = Array.isArray(order?.items) ? order.items : [];
+    const createdAt = order?.createdAt;
+
+    return {
+      id: String(order?._id || order?.id || ''),
+      orderNumber: order?.orderNumber || toOrderNumber(order),
+      date: order?.date || formatDate(createdAt),
+      status: order?.statusColor ? order?.status : statusInfo.label,
+      statusColor: order?.statusColor || statusInfo.color,
+      total: typeof order?.totalAmount === 'number' ? order.totalAmount : typeof order?.total === 'number' ? order.total : Number(order?.totalAmount || order?.total || 0),
+      deliveryAddress: order?.deliveryAddress,
+      items: items.map((it: any) => {
+        const p = it?.product;
+        const src = p || it;
+        const storeName = getStoreName(src?.store);
+        return {
+          name: src?.name || it?.name || 'Product',
+          store: it?.store || storeName,
+          image:
+            it?.image ||
+            (Array.isArray(src?.images) && src.images[0]) ||
+            src?.image ||
+            '',
+          quantity: typeof it?.quantity === 'number' ? it.quantity : Number(it?.quantity || 1),
+        };
+      }),
+    };
+  }, [order]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!orderId) return;
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await orderAPI.getOrderById(orderId);
+        if (cancelled) return;
+        setOrder(res.data);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(getErrorMessage(e, 'Failed to load order'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
+
+  const formatDateTime = (input?: any) => {
+    const d = input ? new Date(input) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const timeline = useMemo(() => {
+    const history = Array.isArray((order as any)?.statusHistory) ? (order as any).statusHistory : [];
+    const historyMap = new Map<string, string>();
+
+    for (const h of history) {
+      const key = String(h?.status || '').toLowerCase();
+      const val = formatDateTime(h?.at);
+      if (key && val) historyMap.set(key, val);
+    }
+
+    const hasHistory = historyMap.size > 0;
+    const statusRaw = (order?.status || order?.rawStatus || '').toLowerCase();
+    const delivered = statusRaw === 'delivered';
+    const shipped = statusRaw === 'shipped' || delivered;
+    const processing = statusRaw === 'confirmed' || statusRaw === 'pending' || shipped;
+
+    const placedDate = hasHistory ? (historyMap.get('pending') || mappedOrder?.date || '') : (mappedOrder?.date || '');
+    const processingDate = hasHistory ? (historyMap.get('confirmed') || historyMap.get('pending') || mappedOrder?.date || '') : (mappedOrder?.date || '');
+    const shippedDate = hasHistory ? (historyMap.get('shipped') || mappedOrder?.date || '') : (mappedOrder?.date || '');
+    const deliveredDate = hasHistory ? (historyMap.get('delivered') || mappedOrder?.date || '') : (mappedOrder?.date || '');
+
+    return [
+      { status: 'Order Placed', date: placedDate, completed: true },
+      { status: 'Processing', date: processing ? processingDate : 'Pending', completed: processing },
+      { status: 'Shipped', date: shipped ? shippedDate : 'Pending', completed: shipped },
+      { status: 'Out for Delivery', date: delivered ? deliveredDate : 'Pending', completed: delivered },
+      { status: 'Delivered', date: delivered ? deliveredDate : 'Pending', completed: delivered },
+    ];
+  }, [mappedOrder?.date, order]);
+
+  const address = mappedOrder?.deliveryAddress;
+  const addressName = typeof address === 'object' && address?.fullName ? address.fullName : '';
+  const addressPhone = typeof address === 'object' && address?.phone ? address.phone : '';
+  const addressLine1 = typeof address === 'object'
+    ? [address?.street, address?.city].filter(Boolean).join(', ')
+    : '';
+  const addressLine2 = typeof address === 'object'
+    ? [address?.state, address?.zip, address?.country].filter(Boolean).join(', ')
+    : '';
+
+  if (loading && !mappedOrder) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error && !mappedOrder) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16, marginBottom: 10 }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            onPress={async () => {
+              if (!orderId) return;
+              setLoading(true);
+              setError(null);
+              try {
+                const res = await orderAPI.getOrderById(orderId);
+                setOrder(res.data);
+              } catch (e: any) {
+                setError(getErrorMessage(e, 'Failed to load order'));
+              } finally {
+                setLoading(false);
+              }
+            }}
+            style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10, marginBottom: 10 }}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!mappedOrder) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16 }}>Order not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -45,12 +235,12 @@ const OrderDetailScreen = ({ navigation, route }) => {
         {/* Order Info */}
         <View style={styles.section}>
           <View style={styles.orderInfo}>
-            <Text style={styles.orderNumber}>{order.orderNumber}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: order.statusColor + '20' }]}>
-              <Text style={[styles.statusText, { color: order.statusColor }]}>{order.status}</Text>
+            <Text style={styles.orderNumber}>{mappedOrder.orderNumber}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: mappedOrder.statusColor + '20' }]}>
+              <Text style={[styles.statusText, { color: mappedOrder.statusColor }]}>{mappedOrder.status}</Text>
             </View>
           </View>
-          <Text style={styles.orderDate}>Placed on {order.date}</Text>
+          <Text style={styles.orderDate}>Placed on {mappedOrder.date}</Text>
         </View>
 
         {/* Tracking Timeline */}
@@ -80,8 +270,8 @@ const OrderDetailScreen = ({ navigation, route }) => {
 
         {/* Items */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Order Items ({order.items.length})</Text>
-          {order.items.map((item, index) => (
+          <Text style={styles.sectionTitle}>Order Items ({mappedOrder.items.length})</Text>
+          {mappedOrder.items.map((item, index) => (
             <View key={index} style={styles.itemCard}>
               <Image source={{ uri: item.image }} style={styles.itemImage} />
               <View style={styles.itemInfo}>
@@ -99,10 +289,10 @@ const OrderDetailScreen = ({ navigation, route }) => {
           <View style={styles.addressCard}>
             <MaterialIcons name="location-on" size={24} color={COLORS.primary} />
             <View style={styles.addressText}>
-              <Text style={styles.addressName}>John Doe</Text>
-              <Text style={styles.addressDetails}>123 Main Street, Apartment 4B</Text>
-              <Text style={styles.addressDetails}>London, W1A 1AA, United Kingdom</Text>
-              <Text style={styles.addressPhone}>+44 20 1234 5678</Text>
+              <Text style={styles.addressName}>{addressName || ' '}</Text>
+              <Text style={styles.addressDetails}>{addressLine1 || ' '}</Text>
+              <Text style={styles.addressDetails}>{addressLine2 || ' '}</Text>
+              <Text style={styles.addressPhone}>{addressPhone || ' '}</Text>
             </View>
           </View>
         </View>
@@ -113,7 +303,7 @@ const OrderDetailScreen = ({ navigation, route }) => {
           <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>£{(order.total - 5.99).toFixed(2)}</Text>
+              <Text style={styles.summaryValue}>£{(mappedOrder.total - 5.99).toFixed(2)}</Text>
             </View>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Shipping</Text>
@@ -126,7 +316,7 @@ const OrderDetailScreen = ({ navigation, route }) => {
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
               <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>£{order.total.toFixed(2)}</Text>
+              <Text style={styles.totalValue}>£{mappedOrder.total.toFixed(2)}</Text>
             </View>
           </View>
         </View>

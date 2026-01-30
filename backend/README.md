@@ -14,13 +14,21 @@ Node.js/Express backend for the k-al handmade products shopping platform.
 
 ```
 backend/
-├── models/          # Database schemas (User, Product, Store, Order)
-├── routes/          # API routes
-├── controllers/     # Business logic
-├── middleware/      # Authentication middleware
-├── server.js        # Main server file
-├── package.json     # Dependencies
-└── .env            # Environment variables
+├── src/
+│   ├── app.ts                 # Express app factory
+│   ├── server.ts              # Main server entrypoint
+│   ├── modules/               # Feature modules (routes/controllers/services/validation)
+│   ├── common/                # Shared HTTP + logging utilities
+│   ├── middleware/            # notFound, errorHandler, etc.
+│   └── config/                # env + db config
+├── models/                    # Mongoose schemas (User, Product, Store, Order)
+├── routes/                    # Legacy route re-exports (backward compatibility)
+├── controllers/               # Legacy controllers (backward compatibility)
+├── middleware/                # Legacy middleware re-exports (backward compatibility)
+├── scripts/                   # Utility scripts (e.g. smoke test)
+├── tests/                     # Jest + Supertest integration tests
+├── package.json               # Dependencies + scripts
+└── .env                       # Environment variables
 ```
 
 ## Installation
@@ -48,6 +56,17 @@ npm start
 For development with auto-reload:
 ```bash
 npm run dev
+```
+
+## Scripts
+
+```bash
+npm run build      # TypeScript build (dist/)
+npm start          # Run built server (dist/src/server.js)
+npm run dev        # Run built server with nodemon
+npm test           # Jest + Supertest + mongodb-memory-server
+npm run test:watch # Watch mode
+npm run smoke:test # End-to-end API smoke test (requires server running)
 ```
 
 ## API Endpoints
@@ -127,6 +146,18 @@ Or use MongoDB Atlas cloud database by updating `MONGODB_URI` in `.env`
 
 ## Testing
 
+Automated tests:
+
+```bash
+npm test
+```
+
+Notes:
+- Tests run against an in-memory MongoDB instance (`mongodb-memory-server`).
+- `JWT_SECRET` is set automatically for tests.
+
+Manual testing:
+
 Use Postman or any API testing tool with the provided endpoints.
 
 Example login:
@@ -147,3 +178,14 @@ All endpoints return appropriate HTTP status codes:
 - 401: Unauthorized
 - 404: Not Found
 - 500: Server Error
+
+## Logging
+
+Requests are logged using structured logging. A request ID is attached/propagated via the `x-request-id` header.
+
+## CI
+
+GitHub Actions workflow runs for backend changes:
+- Install (`npm ci`)
+- Build (`npm run build`)
+- Test (`npm test`)

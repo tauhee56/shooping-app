@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, Image, Alert, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { NativeModules, View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { orderAPI } from '../utils/api';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
+import { useCart } from '../context/CartContext';
+import { addressAPI, paymentsAPI } from '../utils/api';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -14,30 +14,111 @@ const COLORS = {
   gray: '#999999',
 };
 
-const CheckoutScreen = ({ route, navigation }) => {
-  const { cartItems, subtotal, shipping, total } = route.params;
+const CheckoutScreen = ({ navigation }) => {
+  const { items, totals, loading: cartLoading, checkout } = useCart();
   const [selectedAddress, setSelectedAddress] = useState(null);
-  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [selectedPayment, setSelectedPayment] = useState('COD');
   const [loading, setLoading] = useState(false);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
 
-  // Mock saved addresses
-  const savedAddresses = [
-    {
-      id: '1',
-      address: '2715 Ash Dr. San Jose, South...',
-      default: true,
-    },
-  ];
+  const enableStripe = String(process.env.EXPO_PUBLIC_ENABLE_STRIPE || '').toLowerCase() === 'true';
+  const nativeStripeAvailable = (() => {
+    if (!enableStripe) return false;
+    const nm: any = NativeModules;
+    return !!(nm?.StripeSdk || nm?.Stripe || nm?.StripeSdkModule);
+  })();
 
-  // Mock saved payment methods
-  const savedPayments = [
-    {
-      id: '1',
-      last4: '4187',
-      brand: 'Visa',
-      default: true,
-    },
-  ];
+  let stripeSdk: any = null;
+  if (enableStripe) {
+    try {
+      stripeSdk = require('@stripe/stripe-react-native');
+    } catch {
+      stripeSdk = null;
+    }
+  }
+
+  const subtotal = useMemo(() => {
+    if (totals && typeof totals.subtotal === 'number') return totals.subtotal;
+    return (items || []).reduce((sum: number, i: any) => {
+      const price = typeof i?.product?.price === 'number' ? i.product.price : 0;
+      const qty = typeof i?.quantity === 'number' ? i.quantity : 0;
+      return sum + price * qty;
+    }, 0);
+  }, [totals, items]);
+
+  const shipping = 5.99;
+  const total = subtotal + shipping;
+
+  const mapAddress = (a: any) => ({
+    id: String(a?._id || a?.id || ''),
+    address: a?.street || a?.address || '',
+    default: !!a?.isDefault,
+    raw: a,
+  });
+
+  const loadAddresses = async () => {
+    try {
+      setAddressesLoading(true);
+      const res = await addressAPI.getMyAddresses();
+      const list = Array.isArray(res.data) ? res.data : [];
+      const mapped = list.map(mapAddress).filter((x: any) => !!x.id);
+      setAddresses(mapped);
+      const def = mapped.find((x: any) => x.default);
+      if (def && !selectedAddress) {
+        setSelectedAddress(def.id);
+      }
+    } catch {
+      setAddresses([]);
+    } finally {
+      setAddressesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAddresses();
+  }, []);
+
+  const allowCOD = useMemo(() => {
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) return false;
+    return list.every((i: any) => !!i?.product?.effectivePaymentOptions?.codEnabled);
+  }, [items]);
+
+  const allowStripe = useMemo(() => {
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) return false;
+    return list.every((i: any) => {
+      const opt = i?.product?.effectivePaymentOptions;
+      if (!opt) return true;
+      return opt.stripeEnabled !== false;
+    });
+  }, [items]);
+
+  const savedPayments = useMemo(() => {
+    const result: any[] = [];
+    if (allowCOD) {
+      result.push({
+        id: 'COD',
+        title: 'Cash on Delivery',
+        subtitle: 'Pay when you receive your order',
+      });
+    }
+    if (allowStripe) {
+      result.push({
+        id: 'card',
+        title: 'Card',
+        subtitle: enableStripe && nativeStripeAvailable ? 'Pay by card' : 'Requires Stripe-enabled dev build',
+      });
+    }
+    return result;
+  }, [allowCOD, allowStripe, enableStripe, nativeStripeAvailable]);
+
+  useEffect(() => {
+    if (!savedPayments.find((p) => p.id === selectedPayment)) {
+      setSelectedPayment(savedPayments[0]?.id || 'COD');
+    }
+  }, [savedPayments, selectedPayment]);
 
   const handleAddAddress = () => {
     navigation.navigate('Addresses');
@@ -57,24 +138,68 @@ const CheckoutScreen = ({ route, navigation }) => {
       return;
     }
 
+    if (!items || items.length === 0) {
+      Alert.alert('Cart is empty', 'Please add items to your cart before checkout');
+      return;
+    }
+
     try {
       setLoading(true);
-      const orderData = {
-        items: cartItems.map(item => ({
-          product: item.id,
-          quantity: item.quantity || 1,
-          price: item.price,
-        })),
-        shippingAddress: selectedAddress,
-        paymentMethod: selectedPayment,
-        totalAmount: total,
-        shippingCost: shipping,
-      };
+      const addressObj = addresses.find((a) => a.id === selectedAddress);
+      const deliveryAddress = addressObj?.raw || addressObj?.address || 'Address';
 
-      const response = await orderAPI.createOrder(orderData);
-      navigation.navigate('OrderSuccess', { orderId: response.data._id });
+      if (selectedPayment === 'card') {
+        if (!allowStripe) {
+          Alert.alert('Payment not available', 'Card payment is not available for one or more items in your cart.');
+          return;
+        }
+        if (!enableStripe || !nativeStripeAvailable || !stripeSdk) {
+          Alert.alert('Card Payment', 'Card payment needs a Stripe-enabled dev build. For now please use Cash on Delivery.');
+          return;
+        }
+
+        const createRes = await paymentsAPI.createIntent();
+        const clientSecret = String(createRes?.data?.clientSecret || '').trim();
+        const paymentIntentId = String(createRes?.data?.paymentIntentId || '').trim();
+        if (!clientSecret || !paymentIntentId) {
+          Alert.alert('Payment error', 'Failed to initialize card payment.');
+          return;
+        }
+
+        const initRes = await stripeSdk.initPaymentSheet({
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'Shopping App',
+        });
+        if (initRes?.error) {
+          Alert.alert('Payment error', initRes.error.message || 'Failed to initialize payment sheet');
+          return;
+        }
+
+        const presentRes = await stripeSdk.presentPaymentSheet();
+        if (presentRes?.error) {
+          Alert.alert('Payment cancelled', presentRes.error.message || 'Payment not completed');
+          return;
+        }
+
+        const paymentMethod = { type: 'stripe', paymentIntentId };
+        const order = await checkout(deliveryAddress, paymentMethod);
+        navigation.navigate('OrderSuccess', { orderId: order?._id });
+        return;
+      }
+
+      if (!allowCOD) {
+        Alert.alert('Payment not available', 'Cash on Delivery is not available for one or more items in your cart.');
+        return;
+      }
+
+      const paymentMethod = { type: 'COD' };
+      const order = await checkout(deliveryAddress, paymentMethod);
+      navigation.navigate('OrderSuccess', { orderId: order?._id });
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to place order');
+      Alert.alert(
+        getErrorTitle(error, 'Failed to place order'),
+        getErrorMessage(error, 'Failed to place order')
+      );
     } finally {
       setLoading(false);
     }
@@ -98,9 +223,13 @@ const CheckoutScreen = ({ route, navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Shipping Address</Text>
           
-          {savedAddresses.length > 0 ? (
-            <>
-              {savedAddresses.map((address) => (
+          {addressesLoading ? (
+            <View style={{ paddingVertical: 12 }}>
+              <ActivityIndicator />
+            </View>
+          ) : addresses.length > 0 ? (
+            <View>
+              {addresses.map((address) => (
                 <TouchableOpacity
                   key={address.id}
                   style={[
@@ -109,18 +238,14 @@ const CheckoutScreen = ({ route, navigation }) => {
                   ]}
                   onPress={() => setSelectedAddress(address.id)}
                 >
-                  <View style={styles.optionHeader}>
-                    <View
-                      style={[
-                        styles.radioButton,
-                        selectedAddress === address.id && styles.radioButtonSelected,
-                      ]}
-                    >
-                      {selectedAddress === address.id && (
-                        <View style={styles.radioDot} />
-                      )}
+                  <View style={styles.optionRow}>
+                    <View style={styles.radioButton}>
+                      {selectedAddress === address.id && <View style={styles.radioButtonSelected} />}
                     </View>
-                    <Text style={styles.optionText}>{address.address}</Text>
+                    <View style={styles.optionTextContainer}>
+                      <Text style={styles.optionTitle}>{address.default ? 'Default Address' : 'Address'}</Text>
+                      <Text style={styles.optionText}>{address.address}</Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -128,7 +253,7 @@ const CheckoutScreen = ({ route, navigation }) => {
                 <MaterialIcons name="add" size={20} color={COLORS.primary} />
                 <Text style={styles.addButtonText}>Add New Address</Text>
               </TouchableOpacity>
-            </>
+            </View>
           ) : (
             <TouchableOpacity style={styles.emptyCard} onPress={handleAddAddress}>
               <MaterialIcons name="location-on" size={40} color={COLORS.light} />
@@ -142,7 +267,7 @@ const CheckoutScreen = ({ route, navigation }) => {
           <Text style={styles.sectionLabel}>Payment Method</Text>
           
           {savedPayments.length > 0 ? (
-            <>
+            <View>
               {savedPayments.map((payment) => (
                 <TouchableOpacity
                   key={payment.id}
@@ -164,12 +289,10 @@ const CheckoutScreen = ({ route, navigation }) => {
                       )}
                     </View>
                     <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentText}>
-                        **** {payment.last4}
-                      </Text>
+                      <Text style={styles.paymentText}>{payment.title}</Text>
                       <View style={styles.cardBrand}>
                         <View style={styles.cardIndicator} />
-                        <Text style={styles.brandText}>{payment.brand}</Text>
+                        <Text style={styles.brandText}>{payment.subtitle}</Text>
                       </View>
                     </View>
                   </View>
@@ -179,7 +302,7 @@ const CheckoutScreen = ({ route, navigation }) => {
                 <MaterialIcons name="add" size={20} color={COLORS.primary} />
                 <Text style={styles.addButtonText}>Add Payment Method</Text>
               </TouchableOpacity>
-            </>
+            </View>
           ) : (
             <TouchableOpacity style={styles.emptyCard} onPress={handleAddPayment}>
               <MaterialIcons name="payment" size={40} color={COLORS.light} />
@@ -218,8 +341,13 @@ const CheckoutScreen = ({ route, navigation }) => {
         <TouchableOpacity
           style={styles.checkoutButton}
           onPress={handlePlaceOrder}
+          disabled={loading || cartLoading}
         >
-          <Text style={styles.checkoutButtonText}>£{total.toFixed(2)} Place Order</Text>
+          {loading || cartLoading ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.checkoutButtonText}>£{total.toFixed(2)} Place Order</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -275,6 +403,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    marginBottom: 4,
   },
   radioButton: {
     width: 24,

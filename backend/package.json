@@ -1,12 +1,15 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
-    "start": "node dist/server.js",
-    "smoke:test": "node dist/scripts/smoke-test.js",
-    "dev": "nodemon dist/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "smoke:test": "npm run build && node dist/scripts/smoke-test.js",
+    "cleanup:demo": "npm run build && node dist/scripts/cleanup-demo.js",
+    "dev": "nodemon --watch src --watch models --watch routes --ext ts --exec \"npm run build && node dist/src/server.js\"",
+    "test": "jest --config jest.config.js --runInBand",
+    "test:watch": "jest --config jest.config.js --watch"
   },
   "keywords": [],
   "author": "",
@@ -18,13 +21,29 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "firebase-admin": "^13.0.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.0.2",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "pino": "^10.1.1",
+    "pino-http": "^11.0.0",
+    "stripe": "^14.25.0",
+    "socket.io": "^4.8.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
-    "axios": "^1.13.2"
+    "@types/node": "^25.0.3",
+    "@types/supertest": "^6.0.3",
+    "axios": "^1.13.2",
+    "jest": "^30.2.0",
+    "mongodb-memory-server": "^11.0.1",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
   }
 }

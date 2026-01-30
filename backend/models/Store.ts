@@ -5,6 +5,24 @@ const storeSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  paymentOptions: {
+    codEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    stripeEnabled: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  storeType: {
+    type: String,
+    default: '',
+  },
+  tags: {
+    type: [String],
+    default: [],
+  },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

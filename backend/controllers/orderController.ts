@@ -1,16 +1,53 @@
 import { Request, Response } from 'express';
 import Order from '../models/Order';
 
+function normalizeDeliveryAddress(input: any): any {
+  if (!input) return input;
+  if (typeof input === 'string') {
+    return {
+      fullName: '',
+      phone: '',
+      street: input,
+      city: '',
+      state: '',
+      country: '',
+      zip: '',
+      isDefault: false,
+    };
+  }
+  return input;
+}
+
+function normalizePaymentMethod(input: any): any {
+  if (!input) return { type: 'card' };
+  if (typeof input === 'string') return { type: input };
+  if (typeof input === 'object' && input.type) return input;
+  return { type: 'card' };
+}
+
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const { items, totalAmount, deliveryAddress, paymentMethod } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Order items are required' });
+    }
+    if (totalAmount === undefined || totalAmount === null) {
+      return res.status(400).json({ message: 'Total amount is required' });
+    }
+    if (!deliveryAddress) {
+      return res.status(400).json({ message: 'Delivery address is required' });
+    }
+
+    const normalizedDeliveryAddress = normalizeDeliveryAddress(deliveryAddress);
+    const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
 
     const order = new Order({
       user: req.user.userId,
       items,
       totalAmount,
-      deliveryAddress,
-      paymentMethod,
+      deliveryAddress: normalizedDeliveryAddress,
+      paymentMethod: normalizedPaymentMethod,
     });
 
     await order.save();
@@ -58,6 +95,13 @@ export const getOrderById = async (req: Request, res: Response) => {
 export const updateOrderStatus = async (req: Request, res: Response) => {
   try {
     const { status } = req.body;
+    const allowedStatuses = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'];
+    if (!status) {
+      return res.status(400).json({ message: 'Status is required' });
+    }
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
     const order = await Order.findById(req.params.id);
 
     if (!order) {

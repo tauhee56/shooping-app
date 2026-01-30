@@ -4,6 +4,31 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
+const deliveryAddressSchema = new mongoose_1.default.Schema({
+    fullName: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    street: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: '' },
+    country: { type: String, default: '' },
+    zip: { type: String, default: '' },
+    isDefault: { type: Boolean, default: false },
+}, { _id: false });
+const paymentMethodSchema = new mongoose_1.default.Schema({
+    type: { type: String, default: 'card' },
+}, { _id: false });
+const statusHistorySchema = new mongoose_1.default.Schema({
+    status: {
+        type: String,
+        enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+        required: true,
+    },
+    at: {
+        type: Date,
+        default: Date.now,
+        required: true,
+    },
+}, { _id: false });
 const orderSchema = new mongoose_1.default.Schema({
     user: {
         type: mongoose_1.default.Schema.Types.ObjectId,
@@ -23,7 +48,7 @@ const orderSchema = new mongoose_1.default.Schema({
         required: true,
     },
     deliveryAddress: {
-        type: String,
+        type: deliveryAddressSchema,
         required: true,
     },
     status: {
@@ -31,14 +56,22 @@ const orderSchema = new mongoose_1.default.Schema({
         enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
         default: 'pending',
     },
+    statusHistory: {
+        type: [statusHistorySchema],
+        default: () => [{ status: 'pending', at: new Date() }],
+    },
     paymentMethod: {
-        type: String,
-        default: 'card',
+        type: paymentMethodSchema,
+        default: () => ({ type: 'card' }),
     },
     paymentStatus: {
         type: String,
         enum: ['pending', 'completed', 'failed'],
         default: 'pending',
+    },
+    paymentIntentId: {
+        type: String,
+        default: '',
     },
     createdAt: {
         type: Date,

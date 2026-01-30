@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Activi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { storeAPI } from '../utils/api';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -30,7 +31,10 @@ const EditStoreScreen = ({ navigation, route }) => {
       Alert.alert('Success', 'Store updated');
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Error', e.response?.data?.message || 'Failed to update store');
+      Alert.alert(
+        getErrorTitle(e, 'Failed to update store'),
+        getErrorMessage(e, 'Failed to update store')
+      );
     } finally {
       setLoading(false);
     }

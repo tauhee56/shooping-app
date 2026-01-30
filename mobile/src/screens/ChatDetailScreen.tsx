@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import React, { useContext, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { messageAPI } from '../utils/api';
+import { AuthContext } from '../context/AuthContext';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
+import { connectSocket } from '../utils/socket';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -17,7 +20,75 @@ const ChatDetailScreen = ({ navigation, route }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const { user } = useContext(AuthContext);
+
+  const isValidImageUri = (uri: any) => typeof uri === 'string' && uri.trim().length > 0;
+
+  const currentUserId = (user as any)?._id || (user as any)?.id;
+
+  useEffect(() => {
+    let active = true;
+    let socket: any;
+
+    const onNewMessage = (payload: any) => {
+      const msg = payload?.message;
+      if (!msg) return;
+
+      const senderId = String(msg?.sender?._id || msg?.sender || '');
+      const receiverId = String(msg?.receiver?._id || msg?.receiver || '');
+      const otherId = String(userId || '');
+      const meId = String(currentUserId || '');
+
+      if (meId) {
+        const isThisChat =
+          (senderId === meId && receiverId === otherId) || (senderId === otherId && receiverId === meId);
+        if (!isThisChat) return;
+      } else {
+        const isThisChat = senderId === otherId || receiverId === otherId;
+        if (!isThisChat) return;
+      }
+
+      setMessages((prev: any[]) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const exists = list.some(
+          (m: any) =>
+            String(m?._id) === String(msg?._id) ||
+            (!!msg?.clientMessageId && String(m?.clientMessageId || m?._id) === String(msg.clientMessageId))
+        );
+        if (exists) {
+          return list.map((m: any) => {
+            if (!!msg?.clientMessageId && String(m?.clientMessageId || m?._id) === String(msg.clientMessageId)) {
+              return msg;
+            }
+            return m;
+          });
+        }
+        return [...list, msg];
+      });
+    };
+
+    const setup = async () => {
+      try {
+        socket = await connectSocket();
+        if (!active || !socket) return;
+        socket.emit('conversation:join', { otherUserId: userId });
+        socket.on('message:new', onNewMessage);
+      } catch {
+      }
+    };
+
+    setup();
+
+    return () => {
+      active = false;
+      if (socket) {
+        socket.emit('conversation:leave', { otherUserId: userId });
+        socket.off('message:new', onNewMessage);
+      }
+    };
+  }, [userId, currentUserId]);
 
   useEffect(() => {
     loadMessages();
@@ -26,55 +97,104 @@ const ChatDetailScreen = ({ navigation, route }) => {
   const loadMessages = async () => {
     try {
       setLoading(true);
+      setError(null);
       const response = await messageAPI.getMessagesWithUser(userId);
       setMessages(response.data);
     } catch (error) {
-      console.log('Error loading messages:', error);
+      setMessages([]);
+      setError(getErrorMessage(error, 'Failed to load messages'));
     } finally {
       setLoading(false);
     }
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    const messageText = newMessage.trim();
+    if (!messageText) return;
+
+    const clientMessageId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     const tempMessage = {
-      _id: Date.now().toString(),
-      content: newMessage,
-      sender: { _id: 'current-user' },
+      _id: clientMessageId,
+      content: messageText,
+      sender: { _id: currentUserId || '' },
       receiver: { _id: userId },
+      clientMessageId,
       createdAt: new Date(),
     };
 
-    setMessages([...messages, tempMessage]);
+    setMessages((prev) => [...prev, tempMessage]);
     setNewMessage('');
-    
+
     try {
       setSending(true);
-      const response = await messageAPI.sendMessage({
-        receiverId: userId,
-        storeId: storeId || null,
-        content: newMessage,
-      });
-      
-      // Replace temp message with real one
-      setMessages(prev => prev.map(m => m._id === tempMessage._id ? response.data : m));
+      let saved: any = null;
+      try {
+        const socket = await connectSocket();
+        if (socket && socket.connected) {
+          saved = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('timeout')), 6000);
+            socket.emit(
+              'message:send',
+              {
+                receiverId: userId,
+                storeId: storeId || null,
+                content: messageText,
+                clientMessageId,
+              },
+              (res: any) => {
+                clearTimeout(timeout);
+                if (res?.ok && res?.message) resolve(res.message);
+                else reject(new Error(res?.error || 'Failed'));
+              }
+            );
+          });
+        }
+      } catch {
+        saved = null;
+      }
+
+      if (!saved) {
+        const response = await messageAPI.sendMessage({
+          receiverId: userId,
+          storeId: storeId || null,
+          content: messageText,
+          clientMessageId,
+        });
+        saved = response.data;
+      }
+
+      setMessages((prev: any[]) =>
+        (Array.isArray(prev) ? prev : []).map((m: any) =>
+          String(m?.clientMessageId || m?._id) === String(clientMessageId) ? saved : m
+        )
+      );
     } catch (error) {
-      console.log('Error sending message:', error);
       // Remove temp message on error
-      setMessages(prev => prev.filter(m => m._id !== tempMessage._id));
+      setMessages((prev: any[]) => (Array.isArray(prev) ? prev : []).filter((m: any) => String(m?._id) !== String(tempMessage._id)));
+      Alert.alert(
+        getErrorTitle(error, 'Failed to send message'),
+        getErrorMessage(error, 'Failed to send message')
+      );
     } finally {
       setSending(false);
     }
   };
 
   const renderMessage = ({ item }) => {
-    const isCurrentUser = item.sender._id === 'current-user' || item.sender._id.toString() === 'current-user';
+    const isCurrentUser = currentUserId
+      ? String(item?.sender?._id) === String(currentUserId)
+      : false;
     const time = new Date(item.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     
     return (
       <View style={[styles.messageContainer, isCurrentUser ? styles.userMessage : styles.storeMessage]}>
-        {!isCurrentUser && <Image source={{ uri: userImage }} style={styles.messageAvatar} />}
+        {!isCurrentUser &&
+          (isValidImageUri(userImage) ? (
+            <Image source={{ uri: userImage }} style={styles.messageAvatar} />
+          ) : (
+            <View style={styles.messageAvatar} />
+          ))}
         <View style={[styles.messageBubble, isCurrentUser ? styles.userBubble : styles.storeBubble]}>
           <Text style={[styles.messageText, isCurrentUser && styles.userMessageText]}>
             {item.content}
@@ -95,6 +215,27 @@ const ChatDetailScreen = ({ navigation, route }) => {
     );
   }
 
+  if (error && messages.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Text style={{ color: COLORS.secondary, fontWeight: '600', fontSize: 16, marginBottom: 10, textAlign: 'center' }}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            onPress={loadMessages}
+            style={{ paddingVertical: 10, paddingHorizontal: 16, backgroundColor: COLORS.secondary, borderRadius: 10, marginBottom: 10 }}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -107,7 +248,11 @@ const ChatDetailScreen = ({ navigation, route }) => {
             <MaterialIcons name="arrow-back" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
-            <Image source={{ uri: userImage }} style={styles.headerAvatar} />
+            {isValidImageUri(userImage) ? (
+              <Image source={{ uri: userImage }} style={styles.headerAvatar} />
+            ) : (
+              <View style={styles.headerAvatar} />
+            )}
             <View>
               <Text style={styles.headerTitle}>{userName}</Text>
               <Text style={styles.headerStatus}>Online</Text>

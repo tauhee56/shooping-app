@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { useCart } from '../context/CartContext';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -13,50 +12,45 @@ const COLORS = {
   gray: '#999999',
 };
 
-const CartScreen = ({ navigation }) => {
-  const [cartItems, setCartItems] = useState([
-    {
-      id: '1',
-      name: 'Lavender Handmade Soap',
-      store: 'Soap Queen',
-      price: 12.99,
-      quantity: 2,
-      image: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108',
-    },
-    {
-      id: '2',
-      name: 'Natural Body Oil',
-      store: 'Boyou',
-      price: 24.99,
-      quantity: 1,
-      image: 'https://images.unsplash.com/photo-1571875257727-256c39da42af',
-    },
-    {
-      id: '3',
-      name: 'Ceramic Bowl Set',
-      store: 'Gelupo',
-      price: 45.00,
-      quantity: 1,
-      image: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61',
-    },
-  ]);
+ const CartScreen = ({ navigation }) => {
+  const { items, totals, loading, error, refreshCart, updateQty, removeFromCart } = useCart();
 
-  const updateQuantity = (id, change) => {
-    setCartItems(cartItems.map(item => {
-      if (item.id === id) {
-        const newQuantity = Math.max(1, item.quantity + change);
-        return { ...item, quantity: newQuantity };
-      }
-      return item;
-    }));
+  const cartItems = useMemo(() => {
+    return (items || []).map((i: any) => {
+      const product = i?.product;
+      const storeName = product?.store && typeof product.store === 'object' ? (product.store?.name as any) : '';
+      return {
+        id: String(product?._id || product?.id || i?.product || i?._id || ''),
+        name: product?.name || 'Product',
+        store: storeName || '',
+        price: typeof product?.price === 'number' ? product.price : 0,
+        quantity: typeof i?.quantity === 'number' ? i.quantity : 1,
+        image: Array.isArray(product?.images) && product.images.length > 0 ? product.images[0] : undefined,
+      };
+    });
+  }, [items]);
+
+  const updateQuantity = async (id, change) => {
+    try {
+      const current = cartItems.find((x) => x.id === String(id));
+      const nextQty = Math.max(1, (current?.quantity || 1) + change);
+      await updateQty(String(id), nextQty);
+    } catch {
+      // error is handled and exposed via CartContext.error
+    }
   };
 
-  const removeItem = (id) => {
-    setCartItems(cartItems.filter(item => item.id !== id));
+  const removeItem = async (id) => {
+    try {
+      await removeFromCart(String(id));
+    } catch {
+      // error is handled and exposed via CartContext.error
+    }
   };
 
   const calculateSubtotal = () => {
-    return cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    if (totals && typeof totals.subtotal === 'number') return totals.subtotal;
+    return cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   };
 
   const shipping = 5.99;
@@ -64,7 +58,13 @@ const CartScreen = ({ navigation }) => {
 
   const renderCartItem = ({ item }) => (
     <View style={styles.cartItem}>
-      <Image source={{ uri: item.image }} style={styles.itemImage} />
+      {item.image ? (
+        <Image source={{ uri: item.image }} style={styles.itemImage} />
+      ) : (
+        <View style={styles.itemImagePlaceholder}>
+          <MaterialIcons name="image-not-supported" size={24} color={COLORS.gray} />
+        </View>
+      )}
       
       <View style={styles.itemDetails}>
         <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
@@ -111,12 +111,26 @@ const CartScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {cartItems.length > 0 ? (
-        <>
+      {loading ? (
+        <View style={styles.emptyCart}>
+          <ActivityIndicator />
+          <Text style={[styles.emptySubtext, { marginTop: 12 }]}>Loading your cart...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.emptyCart}>
+          <MaterialIcons name="error-outline" size={80} color={COLORS.gray} />
+          <Text style={styles.emptyText}>Unable to load cart</Text>
+          <Text style={styles.emptySubtext}>{error}</Text>
+          <TouchableOpacity style={styles.shopButton} onPress={refreshCart}>
+            <Text style={styles.shopButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : cartItems.length > 0 ? (
+        <View>
           <FlatList
             data={cartItems}
             renderItem={renderCartItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => String(item.id)}
             contentContainerStyle={styles.cartList}
             showsVerticalScrollIndicator={false}
           />
@@ -142,18 +156,13 @@ const CartScreen = ({ navigation }) => {
 
             <TouchableOpacity 
               style={styles.checkoutButton}
-              onPress={() => navigation.navigate('Checkout', {
-                cartItems: cartItems,
-                subtotal: calculateSubtotal(),
-                shipping: shipping,
-                total: total,
-              })}
+              onPress={() => navigation.navigate('Checkout')}
             >
               <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
               <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
-        </>
+        </View>
       ) : (
         <View style={styles.emptyCart}>
           <MaterialIcons name="shopping-cart" size={80} color={COLORS.gray} />
@@ -209,6 +218,14 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 12,
     backgroundColor: COLORS.light,
+  },
+  itemImagePlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: COLORS.light,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemDetails: {
     flex: 1,

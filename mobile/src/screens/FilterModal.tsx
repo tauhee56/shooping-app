@@ -128,7 +128,7 @@ const FilterModal = ({ navigation, route }) => {
             >
               <View style={styles.sortLeft}>
                 <MaterialIcons
-                  name={option.icon}
+                  name={option.icon as any}
                   size={20}
                   color={sortBy === option.id ? COLORS.primary : COLORS.gray}
                 />

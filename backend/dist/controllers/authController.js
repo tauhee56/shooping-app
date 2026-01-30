@@ -113,7 +113,11 @@ const updateProfile = async (req, res) => {
 exports.updateProfile = updateProfile;
 const followUser = async (req, res) => {
     try {
-        const { userId } = req.params;
+        const userIdParam = req.params.userId;
+        const userId = Array.isArray(userIdParam) ? userIdParam[0] : userIdParam;
+        if (!userId) {
+            return res.status(400).json({ message: 'User id is required' });
+        }
         const currentUser = await User_1.default.findById(req.user.userId);
         const targetUser = await User_1.default.findById(userId);
         if (!targetUser || !currentUser) {

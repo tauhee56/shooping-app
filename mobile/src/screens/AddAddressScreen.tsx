@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { addressAPI } from '../utils/api';
+import { getErrorMessage, getErrorTitle } from '../utils/errorMapper';
 
 const COLORS = {
   primary: '#FF6B9D',
@@ -23,14 +25,13 @@ const COLORS = {
 const AddAddressScreen = ({ navigation, route }) => {
   const isEditing = route?.params?.addressId ? true : false;
   const editingAddress = route?.params?.address;
-  const onSave = route?.params?.onSave;
 
   const [fullName, setFullName] = useState(editingAddress?.fullName || editingAddress?.name || '');
   const [phone, setPhone] = useState(editingAddress?.phone || '');
   const [street, setStreet] = useState(editingAddress?.street || editingAddress?.address || '');
   const [city, setCity] = useState(editingAddress?.city || '');
   const [state, setState] = useState(editingAddress?.state || '');
-  const [zipCode, setZipCode] = useState(editingAddress?.zipCode || editingAddress?.postcode || '');
+  const [zipCode, setZipCode] = useState(editingAddress?.zipCode || editingAddress?.zip || editingAddress?.postcode || '');
   const [isDefault, setIsDefault] = useState(editingAddress?.isDefault || false);
 
   const handleSaveAddress = () => {
@@ -59,24 +60,33 @@ const AddAddressScreen = ({ navigation, route }) => {
       return;
     }
 
-    const newAddress = {
-      id: isEditing ? editingAddress.id : String(Date.now()),
-      type: editingAddress?.type || 'Home',
-      name: fullName,
-      phone,
-      address: street,
-      city,
-      postcode: zipCode,
-      country: editingAddress?.country || 'United Kingdom',
-      isDefault,
-    };
+    (async () => {
+      try {
+        const payload: any = {
+          type: editingAddress?.type || 'Home',
+          fullName,
+          phone,
+          street,
+          city,
+          state,
+          zip: zipCode,
+          country: editingAddress?.country || 'United Kingdom',
+          isDefault,
+        };
 
-    if (onSave && typeof onSave === 'function') {
-      onSave(newAddress, { isEditing });
-    }
+        if (isEditing) {
+          const id = String(editingAddress?._id || editingAddress?.id || '');
+          await addressAPI.updateAddress(id, payload);
+        } else {
+          await addressAPI.createAddress(payload);
+        }
 
-    Alert.alert('Success', isEditing ? 'Address updated successfully' : 'Address added successfully');
-    navigation.goBack();
+        Alert.alert('Success', isEditing ? 'Address updated successfully' : 'Address added successfully');
+        navigation.goBack();
+      } catch (e: any) {
+        Alert.alert(getErrorTitle(e, 'Failed to save address'), getErrorMessage(e, 'Failed to save address'));
+      }
+    })();
   };
 
   return (

@@ -9,6 +9,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["controllers", "db", "middleware", "models", "routes", "scripts", "server.ts", "types"],
+  "include": ["src", "controllers", "db", "middleware", "models", "routes", "scripts", "types"],
   "exclude": ["node_modules"]
 }

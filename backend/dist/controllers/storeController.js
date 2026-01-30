@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteProduct = exports.updateProduct = exports.followStore = exports.addProductToStore = exports.updateStore = exports.getMyStore = exports.getStoreById = exports.createStore = void 0;
 const Store_1 = __importDefault(require("../models/Store"));
 const Product_1 = __importDefault(require("../models/Product"));
+const User_1 = __importDefault(require("../models/User"));
 const createStore = async (req, res) => {
     try {
         const { name, description, location } = req.body;
@@ -21,8 +22,7 @@ const createStore = async (req, res) => {
         });
         await store.save();
         // Update user as store owner
-        const User = require('../models/User');
-        await User.findByIdAndUpdate(req.user.userId, {
+        await User_1.default.findByIdAndUpdate(req.user.userId, {
             isStore: true,
             storeId: store._id,
         });

@@ -44,7 +44,7 @@ const RegisterScreen = ({ navigation }) => {
 
     const result = await register(name, email, password, phone);
     if (!result.success) {
-      setError(result.error);
+      setError((result as any).error || 'Registration failed');
     }
   };
 
@@ -55,6 +55,12 @@ const RegisterScreen = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color={COLORS.secondary} />
         </TouchableOpacity>
+
+        <View style={styles.brandingContainer}>
+          <Text style={styles.brandIcon}>🛍️</Text>
+          <Text style={styles.brandName}>k-al</Text>
+          <Text style={styles.brandTagline}>Handmade with Love</Text>
+        </View>
 
         {/* Title */}
         <View style={styles.titleContainer}>
@@ -188,6 +194,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: SCREEN_WIDTH * 0.05,
     paddingVertical: 30,
   },
+  brandingContainer: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
+  brandIcon: { fontSize: 60, marginBottom: 10 },
+  brandName: { fontSize: 32, fontWeight: 'bold', color: COLORS.primary },
+  brandTagline: { fontSize: 12, color: COLORS.gray, marginTop: 5 },
   titleContainer: {
     marginTop: 20,
     marginBottom: 30,

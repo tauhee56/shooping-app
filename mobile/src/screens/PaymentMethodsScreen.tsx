@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -12,94 +12,6 @@ const COLORS = {
 };
 
 const PaymentMethodsScreen = ({ navigation }) => {
-  const [paymentMethods, setPaymentMethods] = useState([
-    {
-      id: '1',
-      type: 'visa',
-      cardNumber: '**** **** **** 4532',
-      cardHolder: 'JOHN DOE',
-      expiryDate: '12/25',
-      isDefault: true,
-    },
-    {
-      id: '2',
-      type: 'mastercard',
-      cardNumber: '**** **** **** 8765',
-      cardHolder: 'JOHN DOE',
-      expiryDate: '08/24',
-      isDefault: false,
-    },
-  ]);
-
-  const setDefaultPayment = (id) => {
-    setPaymentMethods(
-      paymentMethods.map((method) => ({
-        ...method,
-        isDefault: method.id === id,
-      }))
-    );
-  };
-
-  const deletePaymentMethod = (id) => {
-    setPaymentMethods(paymentMethods.filter((method) => method.id !== id));
-  };
-
-  const getCardColor = (type) => {
-    switch (type) {
-      case 'visa':
-        return '#1A1F71';
-      case 'mastercard':
-        return '#EB001B';
-      default:
-        return COLORS.secondary;
-    }
-  };
-
-  const renderPaymentMethod = ({ item }) => (
-    <View style={[styles.paymentCard, { backgroundColor: getCardColor(item.type) }]}>
-      <View style={styles.cardHeader}>
-        <View style={styles.cardChip} />
-        {item.isDefault && (
-          <View style={styles.defaultBadge}>
-            <Text style={styles.defaultText}>Default</Text>
-          </View>
-        )}
-      </View>
-
-      <Text style={styles.cardNumber}>{item.cardNumber}</Text>
-
-      <View style={styles.cardFooter}>
-        <View>
-          <Text style={styles.cardLabel}>Card Holder</Text>
-          <Text style={styles.cardHolder}>{item.cardHolder}</Text>
-        </View>
-        <View>
-          <Text style={styles.cardLabel}>Expires</Text>
-          <Text style={styles.cardExpiry}>{item.expiryDate}</Text>
-        </View>
-      </View>
-
-      <View style={styles.cardActions}>
-        {!item.isDefault && (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => setDefaultPayment(item.id)}
-          >
-            <MaterialIcons name="check-circle-outline" size={18} color={COLORS.white} />
-            <Text style={styles.actionButtonText}>Set Default</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => deletePaymentMethod(item.id)}
-        >
-          <MaterialIcons name="delete-outline" size={18} color={COLORS.white} />
-          <Text style={styles.actionButtonText}>Remove</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -110,13 +22,11 @@ const PaymentMethodsScreen = ({ navigation }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <FlatList
-        data={paymentMethods}
-        renderItem={renderPaymentMethod}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.paymentList}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.emptyState}>
+        <MaterialIcons name="payment" size={64} color={COLORS.gray} />
+        <Text style={styles.emptyTitle}>Stripe setup pending</Text>
+        <Text style={styles.emptyText}>Payment methods will be available once Stripe is configured.</Text>
+      </View>
 
       <TouchableOpacity
         style={styles.addButton}
@@ -151,6 +61,26 @@ const styles = StyleSheet.create({
   },
   paymentList: {
     padding: 15,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.secondary,
+    textAlign: 'center',
+  },
+  emptyText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   paymentCard: {
     borderRadius: 16,

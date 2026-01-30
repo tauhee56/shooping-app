@@ -9,7 +9,7 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 export default [
   // Ignore TS auth prototype stack entirely for now
-  { ignores: ['**/src/context/auth/**'] },
+  { ignores: ['**/src/context/auth/**', '**/_archive/**'] },
   // Bring in Expo's recommended config via compat
   ...compat.extends('eslint-config-expo'),
   // Project-specific overrides

@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import type { Logger } from 'pino';
 
 declare global {
   namespace Express {
@@ -7,6 +8,7 @@ declare global {
     }
     interface Request {
       user: UserPayload;
+      log?: Logger;
     }
   }
 }

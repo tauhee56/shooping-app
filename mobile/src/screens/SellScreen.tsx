@@ -21,8 +21,7 @@ const SellScreen = ({ navigation }) => {
   const [category, setCategory] = useState('');
 
   const addPlaceholderPhoto = () => {
-    const placeholder = 'https://images.unsplash.com/photo-1524592094714-0f0654e20314';
-    setSelectedImages((prev) => [...prev, placeholder]);
+    Alert.alert('Coming soon', 'Photo upload will be available once media upload is configured.');
   };
 
   const removePhotoAt = (index) => {

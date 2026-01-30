@@ -9,6 +9,24 @@ const storeSchema = new mongoose_1.default.Schema({
         type: String,
         required: true,
     },
+    paymentOptions: {
+        codEnabled: {
+            type: Boolean,
+            default: false,
+        },
+        stripeEnabled: {
+            type: Boolean,
+            default: true,
+        },
+    },
+    storeType: {
+        type: String,
+        default: '',
+    },
+    tags: {
+        type: [String],
+        default: [],
+    },
     owner: {
         type: mongoose_1.default.Schema.Types.ObjectId,
         ref: 'User',
